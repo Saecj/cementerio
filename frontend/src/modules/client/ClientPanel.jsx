@@ -46,6 +46,9 @@ export function ClientPanel({
 					onLogin={onLogin}
 					onPayReservation={onPayReservation}
 					onGoToMyReservations={() => onTabChange('reservations')}
+					onGoToSearch={() => onTabChange('search')}
+					onGoToGraveStatus={() => onTabChange('graveStatus')}
+					onGoToPayments={() => onTabChange('payments')}
 				/>
 			)}
 

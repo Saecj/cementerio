@@ -251,8 +251,8 @@ export function Navbar({
 
 	return (
 		<nav
-			className="theme-dark sticky top-0 z-10 border-b border-[color:var(--border)]"
-			style={{ background: 'var(--nav-gradient)' }}
+			className="theme-dark border-b border-[color:var(--border)]"
+			style={{ background: 'var(--nav-gradient-soft, var(--nav-gradient))' }}
 		>
 			<div className="mx-auto max-w-4xl px-4">
 				{/* Fila 1 */}

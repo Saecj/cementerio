@@ -10,6 +10,13 @@
   --gris: #f4f6fb;
 
   --nav-gradient: linear-gradient(90deg, var(--az1), var(--az2) 55%, var(--az3));
+  --nav-gradient-soft:
+    linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--az1) 86%, transparent),
+      color-mix(in oklab, var(--az2) 86%, transparent) 55%,
+      color-mix(in oklab, var(--az3) 86%, transparent)
+    );
   --hero-gradient: linear-gradient(135deg, var(--az1) 0%, var(--az2) 50%, var(--az4) 100%);
   --btn-gradient: linear-gradient(90deg, var(--az2), var(--az3));
 

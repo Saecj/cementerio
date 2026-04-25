@@ -13,7 +13,15 @@ function formatMoney(cents, currency = 'PEN') {
 	}
 }
 
-export function HomeView({ me, onLogin, onGoToMyReservations, onPayReservation: _onPayReservation }) {
+export function HomeView({
+	me,
+	onLogin,
+	onGoToMyReservations,
+	onGoToSearch,
+	onGoToGraveStatus,
+	onGoToPayments,
+	onPayReservation: _onPayReservation,
+}) {
 	const [available, setAvailable] = useState([])
 	const [loading, setLoading] = useState(false)
 	const [msg, setMsg] = useState('')
@@ -318,26 +326,98 @@ export function HomeView({ me, onLogin, onGoToMyReservations, onPayReservation: 
 	}
 
 	return (
-		<div className="mx-auto w-full max-w-6xl px-4 py-6">
-			<Panel className="p-0 overflow-hidden">
+		<div className="space-y-6">
+			{/* Cabecera unificada con Navbar (full-bleed) */}
+			<header
+				className="theme-dark -mx-4 -mt-6 overflow-hidden border-b border-[color:var(--border)]"
+				style={{ background: 'var(--nav-gradient)' }}
+			>
 				<div className="relative">
-					<img src={mausoleoImg} alt="" className="h-40 w-full object-cover opacity-70" loading="lazy" />
-					<div className="absolute inset-0" style={{ background: 'var(--hero-gradient)' }} />
-					<div className="absolute inset-0 flex items-end justify-between gap-3 p-4">
-						<div>
-							<div className="text-xl font-semibold text-white md:text-2xl">Reservas</div>
-							<div className="mt-1 text-sm text-white/80">Elige tu sector y parcela desde el mapa.</div>
+					<img
+						src={mausoleoImg}
+						alt=""
+						className="h-40 w-full object-cover opacity-30 md:h-44"
+						loading="lazy"
+					/>
+					<div className="absolute inset-0 bg-black/35" aria-hidden="true" />
+
+					<div className="relative mx-auto max-w-6xl px-4 py-6">
+						<div className="grid gap-4 md:grid-cols-[1fr_380px] md:items-end">
+							<div>
+								<div className="text-[11px] tracking-[0.18em] uppercase text-white/80">Inicio</div>
+								<div className="mt-2 text-2xl font-semibold tracking-tight text-[color:var(--text-h)] md:text-3xl">
+									Reserva y seguimiento
+								</div>
+								<div className="mt-2 text-sm text-[color:var(--text)]">
+									Reserva una tumba, busca un difunto, revisa el estado de la parcela y gestiona tus reservas y pagos.
+								</div>
+							</div>
+
+							<div className="rounded-xl border border-white/15 bg-white/10 p-4 text-left text-white backdrop-blur">
+								<div className="flex flex-wrap items-center justify-between gap-2">
+									<div className="text-sm font-semibold">Accesos rápidos</div>
+									<div className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white">
+										{loading ? '—' : `${available.length} disponibles`}
+									</div>
+								</div>
+								<div className="mt-3 grid gap-2 sm:grid-cols-2">
+									<button
+										type="button"
+										onClick={() => openReserveModal(null)}
+										className="h-10 rounded-md bg-[color:var(--accent)] px-3 text-sm font-semibold text-[color:var(--on-accent)] ring-1 ring-[color:var(--accent-border)] shadow-[var(--shadow)]"
+									>
+										Reservar tumba
+									</button>
+									<button
+										type="button"
+										onClick={() => (me ? onGoToMyReservations?.() : onLogin?.())}
+										className="h-10 rounded-md border border-white/20 bg-white/10 px-3 text-sm font-medium text-white hover:bg-white/15"
+									>
+										{me ? 'Ver mis reservas' : 'Iniciar sesión'}
+									</button>
+								</div>
+								<div className="mt-3 flex flex-wrap gap-2">
+									<button
+										type="button"
+										onClick={() => onGoToSearch?.()}
+										className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/15"
+									>
+										Buscar difunto
+									</button>
+									<button
+										type="button"
+										onClick={() => onGoToGraveStatus?.()}
+										className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/15"
+									>
+										Ver estado
+									</button>
+									<button
+										type="button"
+										onClick={() => onGoToMyReservations?.()}
+										className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/15"
+									>
+										Reservas
+									</button>
+									<button
+										type="button"
+										onClick={() => onGoToPayments?.()}
+										className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/15"
+									>
+										Pagos
+									</button>
+								</div>
+								{lastReservation?.code ? (
+									<div className="mt-3 text-xs text-white/80">
+										Última reserva: <span className="font-semibold text-white">{lastReservation.code}</span> · {formatReservationStatus(lastReservation.status)}
+									</div>
+								) : null}
+							</div>
 						</div>
-						<button
-							type="button"
-							onClick={() => openReserveModal(null)}
-							className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-sm font-medium text-white hover:bg-white/15"
-						>
-							Abrir mapa
-						</button>
 					</div>
 				</div>
+			</header>
 
+			<Panel className="p-0 overflow-hidden">
 				<div className="p-4">
 					{lastReservation ? (
 						<div className="mb-3 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-2)] px-3 py-3 text-sm text-[color:var(--text)]">
