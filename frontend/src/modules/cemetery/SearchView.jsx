@@ -13,6 +13,20 @@ function prettyGraveStatus(status) {
 	return map[s] || s
 }
 
+function prettyReservationStatus(status) {
+	if (!status) return '—'
+	const s = String(status)
+	const map = {
+		confirmed: 'Confirmada',
+		pending: 'Pendiente',
+		rejected: 'Rechazada',
+		cancelled: 'Cancelada',
+		canceled: 'Cancelada',
+		expired: 'Vencida',
+	}
+	return map[s] || s
+}
+
 export function SearchView({ selectedKey, onSelect, onGoToMap, searchSeed }) {
 	const [q, setQ] = useState('')
 	const [loading, setLoading] = useState(false)
@@ -63,6 +77,8 @@ export function SearchView({ selectedKey, onSelect, onGoToMap, searchSeed }) {
 				it.reservation_code,
 				it.grave_code,
 				it.sector_name,
+				it.branch_name,
+				it.status,
 			]
 				.filter(Boolean)
 				.join(' ')
@@ -151,9 +167,14 @@ export function SearchView({ selectedKey, onSelect, onGoToMap, searchSeed }) {
 									</div>
 									<div className="min-w-0">
 										<div className="truncate text-base font-semibold text-[color:var(--text-h)]">{it.deceased_full_name || '—'}</div>
-										<div className="mt-1 text-xs text-[color:var(--muted)]">Registro asociado a una reserva del cliente</div>
+										<div className="mt-1 text-xs text-[color:var(--muted)]">
+											{it.branch_name ? `Sede: ${it.branch_name}` : 'Sede: —'}
+										</div>
 									</div>
-									<span className="client-status-badge">{prettyGraveStatus(it.grave_status)}</span>
+									<div className="flex flex-wrap items-center justify-end gap-2">
+										<span className="client-status-badge">Reserva: {prettyReservationStatus(it.status)}</span>
+										<span className="client-status-badge">Tumba: {prettyGraveStatus(it.grave_status)}</span>
+									</div>
 								</div>
 								<div className="client-record-card__grid">
 									<div className="client-info-tile">
@@ -161,8 +182,16 @@ export function SearchView({ selectedKey, onSelect, onGoToMap, searchSeed }) {
 										<strong>{it.reservation_code || '—'}</strong>
 									</div>
 									<div className="client-info-tile">
+										<span>Estado</span>
+										<strong>{prettyReservationStatus(it.status)}</strong>
+									</div>
+									<div className="client-info-tile">
 										<span>Tumba</span>
 										<strong>{it.grave_code || '—'}</strong>
+									</div>
+									<div className="client-info-tile">
+										<span>Sede</span>
+										<strong>{it.branch_name || '—'}</strong>
 									</div>
 									<div className="client-info-tile client-info-tile--wide">
 										<span>Ubicación</span>

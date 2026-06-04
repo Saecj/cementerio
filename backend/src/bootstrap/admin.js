@@ -28,10 +28,13 @@ async function ensureBootstrapAdmin() {
 
 	try {
 		await db.withTransaction(async (client) => {
-			const roles = await client.query("SELECT id, name FROM roles WHERE name IN ('admin')");
+			const roles = await client.query("SELECT id, name FROM roles WHERE name IN ('superadmin','admin')");
+			const superadminRoleId = roles.rows.find((r) => r.name === 'superadmin')?.id;
 			const adminRoleId = roles.rows.find((r) => r.name === 'admin')?.id;
-			if (!adminRoleId) {
-				console.warn('[bootstrap] Rol admin no existe (migra la BD).');
+			const bootstrapRoleId = superadminRoleId || adminRoleId;
+			const bootstrapRoleName = superadminRoleId ? 'superadmin' : 'admin';
+			if (!bootstrapRoleId) {
+				console.warn('[bootstrap] Roles no existen (migra la BD).');
 				return;
 			}
 
@@ -50,41 +53,36 @@ async function ensureBootstrapAdmin() {
 					`INSERT INTO users (email, role_id, password_hash, email_verified_at)
 					 VALUES ($1, $2, $3, now())
 					 RETURNING id`,
-					[email, adminRoleId, passwordHash],
+					[email, bootstrapRoleId, passwordHash],
 				);
 				const userId = inserted.rows[0]?.id;
 				if (!userId) throw new Error('BOOTSTRAP_ADMIN_CREATE_FAILED');
 
 				if (!passwordProvided) {
-					console.warn(`[bootstrap] Admin creado: ${email}`);
+					console.warn(`[bootstrap] ${bootstrapRoleName} creado: ${email}`);
 					console.warn(`[bootstrap] Password generado (guárdalo): ${password}`);
 				} else {
-					console.warn(`[bootstrap] Admin creado: ${email}`);
+					console.warn(`[bootstrap] ${bootstrapRoleName} creado: ${email}`);
 				}
 				return;
 			}
 
 			const u = existing.rows[0];
-			// No pisamos password existente a menos que el usuario NO tenga password_hash (caso legacy).
-			const shouldSetPassword = !u.password_hash;
-			const shouldPromoteRole = u.role_id !== adminRoleId;
+			// Inmutabilidad: NO pisamos password existente (ni aunque sea null).
+			const shouldPromoteRole = u.role_id !== bootstrapRoleId;
 			const shouldVerify = !u.email_verified_at;
 
-			if (!shouldSetPassword && !shouldPromoteRole && !shouldVerify) return;
+			if (!shouldPromoteRole && !shouldVerify) return;
 
 			await client.query(
 				`UPDATE users
 				 SET role_id = $1,
-				 	password_hash = CASE WHEN password_hash IS NULL THEN $2 ELSE password_hash END,
 				 	email_verified_at = CASE WHEN email_verified_at IS NULL THEN now() ELSE email_verified_at END
-				 WHERE id = $3`,
-				[adminRoleId, passwordHash, u.id],
+				 WHERE id = $2`,
+				[bootstrapRoleId, u.id],
 			);
 
-			console.warn(`[bootstrap] Admin actualizado: ${email}`);
-			if (shouldSetPassword && !passwordProvided) {
-				console.warn(`[bootstrap] Password generado (guárdalo): ${password}`);
-			}
+			console.warn(`[bootstrap] ${bootstrapRoleName} actualizado: ${email}`);
 		});
 	} catch (err) {
 		console.warn('[bootstrap] Falló ensureBootstrapAdmin:', err?.message || err);

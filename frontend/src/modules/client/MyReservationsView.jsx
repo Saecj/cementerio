@@ -45,6 +45,7 @@ export function MyReservationsView({ me, onLogin, onPayReservation, filterSeed }
 	const [error, setError] = useState('')
 	const [items, setItems] = useState([])
 	const [filterQ, setFilterQ] = useState('')
+	const [cancelingId, setCancelingId] = useState(null)
 
 	useEffect(() => {
 		if (!filterSeed?.ts) return
@@ -64,9 +65,12 @@ export function MyReservationsView({ me, onLogin, onPayReservation, filterSeed }
 			}
 			const haystack = [
 				r.deceased_full_name,
+				r.reserved_deceased_full_name,
+				r.occupied_deceased_full_name,
 				r.reservation_code,
 				r.grave_code,
 				r.sector_name,
+				r.branch_name,
 				r.row_number,
 				r.col_number,
 				r.status,
@@ -109,6 +113,25 @@ export function MyReservationsView({ me, onLogin, onPayReservation, filterSeed }
 			}
 		} finally {
 			setLoading(false)
+		}
+	}
+
+	async function cancelReservation(id) {
+		if (!me) return
+		const n = Number(id)
+		if (!Number.isFinite(n)) return
+		if (cancelingId === n) return
+		setCancelingId(n)
+		setError('')
+		try {
+			const r = await api(`/api/client/reservations/${n}/cancel`, { method: 'POST' })
+			if (!r.ok) {
+				setError(r.data?.error || 'No se pudo cancelar la reserva')
+				return
+			}
+			await refresh()
+		} finally {
+			setCancelingId(null)
 		}
 	}
 
@@ -179,7 +202,7 @@ export function MyReservationsView({ me, onLogin, onPayReservation, filterSeed }
 					value={filterQ}
 					onChange={(e) => setFilterQ(e.target.value)}
 					className="w-full rounded-md border border-[color:var(--border)] bg-transparent px-3 py-2 text-sm text-[color:var(--text-h)]"
-					placeholder="Filtrar por código, difunto, tumba o sección"
+					placeholder="Filtrar por código, difunto, tumba, sede o sección"
 				/>
 				<div className="client-ledger-toolbar__count">{filteredItems.length} visibles</div>
 			</div>
@@ -204,11 +227,13 @@ export function MyReservationsView({ me, onLogin, onPayReservation, filterSeed }
 								<th className="px-3 py-2 font-medium">Código</th>
 								<th className="px-3 py-2 font-medium">Tumba</th>
 								<th className="px-3 py-2 font-medium">Sección</th>
-								<th className="px-3 py-2 font-medium">Lugar</th>
-								<th className="px-3 py-2 font-medium">Número</th>
+								<th className="px-3 py-2 font-medium">Sede</th>
+								<th className="px-3 py-2 font-medium">Fila</th>
+								<th className="px-3 py-2 font-medium">Col</th>
 								<th className="px-3 py-2 font-medium">Nombre</th>
 								<th className="px-3 py-2 font-medium">Desde</th>
 								<th className="px-3 py-2 font-medium">Hasta</th>
+								<th className="px-3 py-2 font-medium">Ingreso</th>
 								<th className="px-3 py-2 font-medium">Estado</th>
 								<th className="px-3 py-2 font-medium">Pendiente</th>
 								<th className="px-3 py-2 font-medium">Fecha</th>
@@ -224,21 +249,39 @@ export function MyReservationsView({ me, onLogin, onPayReservation, filterSeed }
 								const paidDone = r.status === 'confirmed' && price > 0 && paid >= price
 								const pendingValidation = r.status === 'confirmed' && !paidDone && pending > 0
 								const pendingPay = r.status === 'confirmed' && !paidDone && !pendingValidation && due > 0
+								const hasBurial = Boolean(r?.has_burial) || String(r?.grave_status || '') === 'occupied'
+								const displayName =
+									String(r?.reserved_deceased_full_name || '').trim() ||
+									String(r?.deceased_full_name || '').trim() ||
+									'—'
+								const occupiedName = String(r?.occupied_deceased_full_name || '').trim()
 								return (
 									<tr key={r.id} className="border-t border-[color:var(--border)]">
 										<td className="px-3 py-2 text-[color:var(--text)]">{r.id}</td>
 										<td className="px-3 py-2 text-[color:var(--text)]"><span className="client-code-pill">{r.reservation_code || '—'}</span></td>
 										<td className="px-3 py-2 text-[color:var(--text)]"><span className="font-semibold text-[color:var(--text-h)]">{r.grave_code || '—'}</span></td>
 										<td className="px-3 py-2 text-[color:var(--text)]">{r.sector_name || '—'}</td>
+										<td className="px-3 py-2 text-[color:var(--text)]">{r.branch_name || '—'}</td>
 										<td className="px-3 py-2 text-[color:var(--text)]">{r.row_number ?? '—'}</td>
 										<td className="px-3 py-2 text-[color:var(--text)]">{r.col_number ?? '—'}</td>
-										<td className="px-3 py-2 text-[color:var(--text)]">{r.deceased_full_name || '—'}</td>
+										<td className="px-3 py-2 text-[color:var(--text)]">
+											<div className="font-semibold text-[color:var(--text-h)]">{displayName}</div>
+											{hasBurial && occupiedName && occupiedName !== displayName ? (
+												<div className="mt-0.5 text-[11px] text-[color:var(--muted)]">En tumba: {occupiedName}</div>
+											) : null}
+										</td>
 										<td className="px-3 py-2 text-[color:var(--text)]">{formatDate(r.reserved_from)}</td>
 										<td className="px-3 py-2 text-[color:var(--text)]">{formatDate(r.reserved_to)}</td>
+										<td className="px-3 py-2 text-[color:var(--text)]">{hasBurial ? 'Sí' : 'No'}</td>
 										<td className="px-3 py-2 text-[color:var(--text)]">
-											<span className={'client-status-chip ' + (paidDone ? 'client-status-chip--ok' : pendingPay || pendingValidation ? 'client-status-chip--warn' : '')}>
-												{paidDone ? 'Pagado' : pendingValidation ? 'Pendiente validación' : pendingPay ? 'Pendiente pagar' : prettyStatus(r.status)}
-											</span>
+											<div className="flex flex-col gap-1">
+												<span className="text-[11px] text-[color:var(--muted)]">Reserva</span>
+												<span className="font-semibold text-[color:var(--text-h)]">{prettyStatus(r.status)}</span>
+												<span className="text-[11px] text-[color:var(--muted)]">Pago</span>
+												<span className={'client-status-chip ' + (paidDone ? 'client-status-chip--ok' : pendingPay || pendingValidation ? 'client-status-chip--warn' : '')}>
+													{paidDone ? 'Pagado' : pendingValidation ? 'Pendiente validación' : pendingPay ? 'Pendiente pagar' : '—'}
+												</span>
+											</div>
 										</td>
 										<td className="px-3 py-2 text-[color:var(--text)]">
 											{pendingPay ? formatMoney(due, 'PEN') : pendingValidation ? formatMoney(pending, 'PEN') : '—'}
@@ -251,6 +294,15 @@ export function MyReservationsView({ me, onLogin, onPayReservation, filterSeed }
 													className="rounded-md bg-[color:var(--accent)] px-3 py-2 text-xs font-semibold text-[color:var(--on-accent)]"
 												>
 													Pagar
+												</button>
+											) : r.status === 'pending' ? (
+												<button
+													onClick={() => cancelReservation(r.id)}
+													disabled={cancelingId === Number(r.id) || loading}
+													className="rounded-md border border-[color:var(--border)] px-3 py-2 text-xs font-semibold text-[color:var(--text-h)] hover:bg-[color:var(--hover)] disabled:opacity-50"
+													title="Cancelar solicitud"
+												>
+													{cancelingId === Number(r.id) ? 'Cancelando…' : 'Cancelar'}
 												</button>
 											) : null}
 										</td>

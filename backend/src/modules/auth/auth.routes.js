@@ -40,6 +40,7 @@ function buildAuthRouter() {
 	async function loadUserSession(userId) {
 		const result = await db.query(
 			`SELECT u.id, u.email, u.username, u.role_id, r.name AS role,
+					u.admin_permissions,
 					e.permissions AS employee_permissions
 			 FROM users u
 			 JOIN roles r ON r.id = u.role_id
@@ -49,7 +50,17 @@ function buildAuthRouter() {
 		);
 		const u = result.rows[0];
 		if (!u) return null;
-		const permissions = Array.isArray(u.employee_permissions) ? u.employee_permissions : [];
+
+		// Permisos:
+		// - employee: viene de employees.permissions
+		// - admin: viene de users.admin_permissions (NULL => acceso total; array => restringido)
+		let permissions = [];
+		if (u.role === 'employee') {
+			permissions = Array.isArray(u.employee_permissions) ? u.employee_permissions : [];
+		} else if (u.role === 'admin') {
+			permissions = u.admin_permissions == null ? null : Array.isArray(u.admin_permissions) ? u.admin_permissions : [];
+		}
+
 		return { id: u.id, email: u.email, username: u.username, roleId: u.role_id, role: u.role, permissions };
 	}
 
@@ -133,12 +144,14 @@ function buildAuthRouter() {
 		await db.query('UPDATE auth_email_codes SET consumed_at = now() WHERE id = $1', [codeId]);
 
 		const rolesResult = await db.query(
-			"SELECT id, name FROM roles WHERE name IN ('admin','employee','visitor','client')",
+			"SELECT id, name FROM roles WHERE name IN ('superadmin','admin','employee','visitor','client')",
 		);
 		const rolesByName = new Map(rolesResult.rows.map((r) => [r.name, r.id]));
 		const visitorRoleId = rolesByName.get('visitor');
+		const superadminRoleId = rolesByName.get('superadmin');
 		const adminRoleId = rolesByName.get('admin');
-		if (!visitorRoleId || !adminRoleId) {
+		const bootstrapRoleId = superadminRoleId || adminRoleId;
+		if (!visitorRoleId || !bootstrapRoleId) {
 			return res.status(500).json({ ok: false, error: 'ROLES_NOT_INITIALIZED' });
 		}
 
@@ -155,10 +168,10 @@ function buildAuthRouter() {
 		let user = userUpsert.rows[0];
 		const bootstrapAdminEmail = normalizeEmail(process.env.BOOTSTRAP_ADMIN_EMAIL);
 		if (bootstrapAdminEmail && bootstrapAdminEmail === email) {
-			if (user.role_id !== adminRoleId) {
+			if (user.role_id !== bootstrapRoleId) {
 				const updated = await db.query(
 					'UPDATE users SET role_id = $1 WHERE id = $2 RETURNING id, email, role_id',
-					[adminRoleId, user.id],
+					[bootstrapRoleId, user.id],
 				);
 				user = updated.rows[0] || user;
 			}

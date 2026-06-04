@@ -44,13 +44,16 @@ export function AdminPanel({ me }) {
 	const [payments, setPayments] = useState([])
 
 	const perms = Array.isArray(me?.permissions) ? me.permissions : []
-	const isAdmin = me?.role === 'admin'
-	const canGraves = isAdmin || perms.includes('graves')
-	const canDeceased = isAdmin || perms.includes('deceased')
-	const canReservations = isAdmin || perms.includes('reservations')
-	const canPayments = isAdmin || perms.includes('payments')
-	const canReports = isAdmin || perms.includes('reports')
-	const canEmployees = isAdmin
+	const isSuperadmin = me?.role === 'superadmin'
+	const isAdminRole = me?.role === 'admin'
+	const isUnrestrictedAdmin = isAdminRole && me?.permissions == null
+	const hasFullAccess = isSuperadmin || isUnrestrictedAdmin
+	const canGraves = hasFullAccess || perms.includes('graves')
+	const canDeceased = hasFullAccess || perms.includes('deceased')
+	const canReservations = hasFullAccess || perms.includes('reservations')
+	const canPayments = hasFullAccess || perms.includes('payments')
+	const canReports = hasFullAccess || perms.includes('reports')
+	const canEmployees = hasFullAccess || perms.includes('employees')
 
 	const moduleMeta = {
 		dashboard: {
@@ -112,14 +115,15 @@ export function AdminPanel({ me }) {
 	}
 
 	const allowedModules = (() => {
-		if (isAdmin) {
+		if (hasFullAccess) {
 			return ['dashboard', 'graves', 'deceased', 'reservations', 'payments', 'employees', 'reports']
 		}
-		const list = []
+		const list = ['dashboard']
 		if (canGraves) list.push('graves')
 		if (canDeceased) list.push('deceased')
 		if (canReservations) list.push('reservations')
 		if (canPayments) list.push('payments')
+		if (canEmployees) list.push('employees')
 		if (canReports) list.push('reports')
 		return list
 	})()
@@ -134,22 +138,22 @@ export function AdminPanel({ me }) {
 
 	async function refreshAll() {
 		const calls = []
-		if (isAdmin || canGraves) {
+		if (canGraves) {
 			calls.push(['branches', api('/api/admin/branches')])
 			calls.push(['sectors', api('/api/admin/sectors')])
 			calls.push(['graveTypes', api('/api/admin/grave-types')])
 			calls.push(['graves', api('/api/admin/graves')])
 		}
-		if (isAdmin || canEmployees) {
+		if (canEmployees) {
 			calls.push(['employees', api('/api/admin/employees')])
 		}
-		if (isAdmin || canDeceased) {
+		if (canDeceased) {
 			calls.push(['deceased', api('/api/admin/deceased')])
 		}
-		if (isAdmin || canReservations || canReports) {
+		if (canReservations || canReports) {
 			calls.push(['reservations', api('/api/admin/reservations')])
 		}
-		if (isAdmin || canPayments || canReports) {
+		if (canPayments || canReports) {
 			calls.push(['paymentTypes', api('/api/admin/payment-types')])
 			calls.push(['payments', api('/api/admin/payments')])
 		}
@@ -223,7 +227,7 @@ export function AdminPanel({ me }) {
 					</div>
 					<div className="mt-4 flex flex-wrap gap-2">
 						<span className="admin-hero__pill">{me?.email || 'Administrador'}</span>
-						<span className="admin-hero__pill">{isAdmin ? 'Acceso total' : 'Acceso por permisos'}</span>
+						<span className="admin-hero__pill">{hasFullAccess ? 'Acceso total' : 'Acceso por permisos'}</span>
 						<span className="admin-hero__pill">{lastRefreshAt ? `Actualizado ${lastRefreshAt.toLocaleTimeString()}` : 'Esperando datos'}</span>
 					</div>
 				</div>
@@ -257,13 +261,11 @@ export function AdminPanel({ me }) {
 							<div className="mt-1 text-sm font-semibold text-[color:var(--text-h)]">Navegación operativa</div>
 						</div>
 						<div className="space-y-1">
-							{(isAdmin ? true : false) && (
-								<SidebarButton active={activeModule === 'dashboard'} onClick={() => setActiveModule('dashboard')}>
-									<span className="admin-sidebar-button__code">IN</span>
-									<span>Inicio</span>
-									<span className="admin-sidebar-button__metric">{moduleMeta.dashboard.value}</span>
-								</SidebarButton>
-							)}
+							<SidebarButton active={activeModule === 'dashboard'} onClick={() => setActiveModule('dashboard')}>
+								<span className="admin-sidebar-button__code">IN</span>
+								<span>Inicio</span>
+								<span className="admin-sidebar-button__metric">{moduleMeta.dashboard.value}</span>
+							</SidebarButton>
 							{canGraves && (
 								<SidebarButton active={activeModule === 'graves'} onClick={() => setActiveModule('graves')}>
 									<span className="admin-sidebar-button__code">TU</span>
@@ -335,7 +337,7 @@ export function AdminPanel({ me }) {
 							</div>
 						</div>
 						<div className="mt-4">
-						{activeModule === 'dashboard' && isAdmin && (
+						{activeModule === 'dashboard' && hasFullAccess && (
 							<AdminDashboardModule
 								branches={branches}
 								sectors={sectors}
@@ -364,14 +366,14 @@ export function AdminPanel({ me }) {
 						)}
 
 						{activeModule === 'employees' && canEmployees && (
-							<AdminEmployeesModule employees={employees} onRefresh={refreshAll} />
+							<AdminEmployeesModule me={me} employees={employees} onRefresh={refreshAll} />
 						)}
 
 						{activeModule === 'reports' && canReports && (
 							<AdminReportsModule reservations={reservations} payments={payments} onRefresh={refreshAll} />
 						)}
 
-						{!isAdmin && allowedModules.length === 0 && (
+						{!hasFullAccess && allowedModules.length === 0 && (
 							<div className="rounded-md border border-[color:var(--border)] p-3 text-sm text-[color:var(--text)]">
 								No tienes permisos asignados. Pídele a un administrador que te habilite módulos.
 							</div>

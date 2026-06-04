@@ -2,14 +2,19 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../../lib/api'
 import { Card } from '../ui'
 
-export function AdminEmployeesModule({ employees, onRefresh }) {
+export function AdminEmployeesModule({ me, employees, onRefresh }) {
 	const PERMISSIONS = [
 		{ key: 'graves', label: 'Tumbas', hint: 'Mapa, grilla, crear/editar parcelas' },
 		{ key: 'deceased', label: 'Difuntos', hint: 'Registrar difuntos y entierros' },
 		{ key: 'reservations', label: 'Reservas', hint: 'Gestionar reservas (confirmar/cancelar)' },
 		{ key: 'payments', label: 'Pagos', hint: 'Gestionar pagos' },
+		{ key: 'employees', label: 'Empleados', hint: 'Usuarios internos, permisos y accesos' },
 		{ key: 'reports', label: 'Reporte', hint: 'Ver reportes (solo lectura de reservas/pagos)' },
 	]
+
+	const isSuperadmin = me?.role === 'superadmin'
+	const isFullAdmin = me?.role === 'admin' && me?.permissions == null
+	const canManageRoles = isSuperadmin || isFullAdmin
 
 	function safeStorageGet(key) {
 		try {
@@ -55,35 +60,173 @@ export function AdminEmployeesModule({ employees, onRefresh }) {
 		return employees.filter((e) => Number(e.id) > Number(seenMaxId)).length
 	}, [employees, seenMaxId])
 	const [roleEmail, setRoleEmail] = useState('')
-	const [roleName, setRoleName] = useState('employee')
+	const [roleName, setRoleName] = useState('visitor')
+	const [rolePassword, setRolePassword] = useState('')
+	const [roleConfirmPassword, setRoleConfirmPassword] = useState('')
+	const [showRolePassword, setShowRolePassword] = useState(false)
 	const [roleLoading, setRoleLoading] = useState(false)
 	const [roleMsg, setRoleMsg] = useState('')
-	const canSetRole = useMemo(() => roleEmail.trim().includes('@'), [roleEmail])
+	const isRoleAdmin = roleName === 'admin'
+	const canSetRole = useMemo(() => {
+		if (!roleEmail.trim().includes('@')) return false
+		if (!isRoleAdmin) return true
+		if (!rolePassword || !roleConfirmPassword) return false
+		if (rolePassword !== roleConfirmPassword) return false
+		return true
+	}, [isRoleAdmin, roleConfirmPassword, roleEmail, rolePassword])
 
 	async function setRole(e) {
 		e?.preventDefault()
 		setRoleLoading(true)
 		setRoleMsg('')
 		try {
+			const email = String(roleEmail || '').trim()
+			if (!email || !email.includes('@')) {
+				setRoleMsg('Email inválido.')
+				return
+			}
+			if (isRoleAdmin) {
+				if (!rolePassword || !roleConfirmPassword) {
+					setRoleMsg('Contraseña requerida para admin.')
+					return
+				}
+				if (rolePassword !== roleConfirmPassword) {
+					setRoleMsg('Las contraseñas no coinciden.')
+					return
+				}
+			}
+
 			const result = await api('/api/admin/users/role', {
 				method: 'POST',
-				body: JSON.stringify({ email: roleEmail, role: roleName }),
+				body: JSON.stringify({
+					email,
+					role: roleName,
+					...(isRoleAdmin
+						? {
+							password: rolePassword,
+							confirmPassword: roleConfirmPassword,
+						}
+						: null),
+				}),
 			})
 			if (!result.ok) {
-				setRoleMsg(result.data?.error || 'No se pudo asignar el rol')
+				const code = result.data?.error
+				if (code === 'EMAIL_INVALID') setRoleMsg('Email inválido.')
+				else if (code === 'PASSWORD_REQUIRED') setRoleMsg('Este usuario no tiene contraseña aún: define una para asignar rol admin.')
+				else if (code === 'PASSWORD_MISMATCH') setRoleMsg('Las contraseñas no coinciden.')
+				else if (code === 'PASSWORD_TOO_SHORT') setRoleMsg('Contraseña muy corta (mínimo 8).')
+				else if (code === 'PASSWORD_MISSING_UPPERCASE') setRoleMsg('La contraseña debe incluir una mayúscula.')
+				else if (code === 'PASSWORD_MISSING_NUMBER') setRoleMsg('La contraseña debe incluir un número.')
+				else if (code === 'PASSWORD_MISSING_SPECIAL') setRoleMsg('La contraseña debe incluir un símbolo (ej: !@#).')
+				else if (code === 'PASSWORD_WEAK') setRoleMsg('Contraseña débil (usa más caracteres y mezcla letras/números).')
+				else if (code === 'IMMUTABLE_SUPERADMIN') setRoleMsg('No se puede modificar este usuario (superadmin bootstrap).')
+				else if (code === 'ROLE_INVALID') setRoleMsg('Rol inválido.')
+				else if (code === 'ROLES_NOT_INITIALIZED') setRoleMsg('Roles no inicializados en la base de datos.')
+				else setRoleMsg(code || 'No se pudo asignar el rol')
 				return
 			}
 			setRoleMsg('Rol asignado')
 			setRoleEmail('')
+			setRolePassword('')
+			setRoleConfirmPassword('')
+			setShowRolePassword(false)
 			await onRefresh?.()
 		} finally {
 			setRoleLoading(false)
 		}
 	}
 
+	// Superadmin: permisos configurables para admins (sub-admins)
+	const [admins, setAdmins] = useState([])
+	const [adminsLoading, setAdminsLoading] = useState(false)
+	const [adminsMsg, setAdminsMsg] = useState('')
+	const [selectedAdminId, setSelectedAdminId] = useState('')
+	const [adminFullAccess, setAdminFullAccess] = useState(true)
+	const [adminPerms, setAdminPerms] = useState(() => new Set())
+	const [adminSaving, setAdminSaving] = useState(false)
+
+	const selectedAdmin = useMemo(() => {
+		if (!selectedAdminId) return null
+		return admins.find((a) => String(a?.id) === String(selectedAdminId)) || null
+	}, [admins, selectedAdminId])
+
+	async function loadAdmins() {
+		if (!isSuperadmin) return
+		setAdminsLoading(true)
+		setAdminsMsg('')
+		try {
+			const result = await api('/api/admin/admins')
+			if (!result.ok) {
+				setAdminsMsg(result.data?.error || 'No se pudo cargar la lista de admins')
+				return
+			}
+			setAdmins(Array.isArray(result.data?.admins) ? result.data.admins : [])
+		} finally {
+			setAdminsLoading(false)
+		}
+	}
+
+	useEffect(() => {
+		if (isSuperadmin) loadAdmins()
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [isSuperadmin])
+
+	useEffect(() => {
+		if (!selectedAdmin) return
+		setAdminsMsg('')
+		const perms = selectedAdmin.admin_permissions
+		if (perms == null) {
+			setAdminFullAccess(true)
+			setAdminPerms(new Set())
+		} else {
+			setAdminFullAccess(false)
+			setAdminPerms(new Set(Array.isArray(perms) ? perms : []))
+		}
+	}, [selectedAdmin])
+
+	function toggleAdminPerm(key) {
+		setAdminPerms((prev) => {
+			const next = new Set(prev)
+			if (next.has(key)) next.delete(key)
+			else next.add(key)
+			return next
+		})
+	}
+
+	async function saveAdminPermissions(e) {
+		e?.preventDefault()
+		if (!selectedAdmin) {
+			setAdminsMsg('Selecciona un admin.')
+			return
+		}
+		setAdminSaving(true)
+		setAdminsMsg('')
+		try {
+			const payload = {
+				permissions: adminFullAccess ? null : Array.from(adminPerms),
+			}
+			const result = await api(`/api/admin/admins/${selectedAdmin.id}/permissions`, {
+				method: 'PUT',
+				body: JSON.stringify(payload),
+			})
+			if (!result.ok) {
+				const code = result.data?.error
+				if (code === 'IMMUTABLE_SUPERADMIN') setAdminsMsg('No se puede modificar este usuario (superadmin bootstrap).')
+				else if (code === 'FORBIDDEN') setAdminsMsg('Solo superadmin puede editar admins.')
+				else setAdminsMsg(code || 'No se pudo guardar permisos del admin')
+				return
+			}
+			setAdminsMsg('Permisos actualizados')
+			await loadAdmins()
+		} finally {
+			setAdminSaving(false)
+		}
+	}
+
 	const [eEmail, setEEmail] = useState('')
 	const [eName, setEName] = useState('')
 	const [ePhone, setEPhone] = useState('')
+	const [eJobTitle, setEJobTitle] = useState('')
 	const [ePassword, setEPassword] = useState('')
 	const [eConfirmPassword, setEConfirmPassword] = useState('')
 	const [showPassword, setShowPassword] = useState(false)
@@ -161,6 +304,7 @@ export function AdminEmployeesModule({ employees, onRefresh }) {
 				email,
 				fullName: eName,
 				phone: ePhone,
+				jobTitle: eJobTitle,
 				permissions,
 			}
 			if (wantsPasswordUpdate) {
@@ -192,6 +336,7 @@ export function AdminEmployeesModule({ employees, onRefresh }) {
 			setEEmail('')
 			setEName('')
 			setEPhone('')
+			setEJobTitle('')
 			setEPassword('')
 			setEConfirmPassword('')
 			setShowPassword(false)
@@ -209,6 +354,7 @@ export function AdminEmployeesModule({ employees, onRefresh }) {
 		setEEmail(emp.email || '')
 		setEName(emp.full_name || '')
 		setEPhone(emp.phone || '')
+		setEJobTitle(emp.job_title || '')
 		setEPassword('')
 		setEConfirmPassword('')
 		setShowPassword(false)
@@ -229,8 +375,9 @@ export function AdminEmployeesModule({ employees, onRefresh }) {
 		<Card title="Gestionar empleados">
 			<div className="grid gap-3 md:grid-cols-2">
 				<section className="space-y-3">
-					<form className="space-y-2" onSubmit={setRole}>
-						<div className="text-xs font-medium text-[color:var(--text-h)]">Asignar rol a usuario</div>
+					{canManageRoles && (
+						<form className="space-y-2" onSubmit={setRole}>
+							<div className="text-xs font-medium text-[color:var(--text-h)]">Asignar rol a usuario</div>
 				<input
 					type="email"
 					autoComplete="email"
@@ -247,7 +394,6 @@ export function AdminEmployeesModule({ employees, onRefresh }) {
 					>
 						<option value="visitor">visitor</option>
 						<option value="client">client</option>
-						<option value="employee">employee</option>
 						<option value="admin">admin</option>
 					</select>
 					<button
@@ -257,8 +403,113 @@ export function AdminEmployeesModule({ employees, onRefresh }) {
 						{roleLoading ? 'Asignando…' : 'Asignar'}
 					</button>
 				</div>
+						{isRoleAdmin && (
+							<div className="space-y-2 rounded-md border border-[color:var(--border)] p-2">
+								<div className="flex items-center justify-between gap-2">
+									<div className="text-xs font-medium text-[color:var(--text-h)]">Contraseña (admin)</div>
+									<label className="flex items-center gap-2 text-xs text-[color:var(--text)]">
+										<input
+											type="checkbox"
+											checked={showRolePassword}
+											onChange={(e) => setShowRolePassword(e.target.checked)}
+										/>
+										Mostrar
+									</label>
+								</div>
+								<input
+									type={showRolePassword ? 'text' : 'password'}
+									autoComplete="new-password"
+									value={rolePassword}
+									onChange={(e) => setRolePassword(e.target.value)}
+									className="w-full rounded-md border border-[color:var(--border)] bg-transparent px-3 py-2 text-sm"
+									placeholder="Contraseña"
+								/>
+								<input
+									type={showRolePassword ? 'text' : 'password'}
+									autoComplete="new-password"
+									value={roleConfirmPassword}
+									onChange={(e) => setRoleConfirmPassword(e.target.value)}
+									className="w-full rounded-md border border-[color:var(--border)] bg-transparent px-3 py-2 text-sm"
+									placeholder="Confirmar contraseña"
+								/>
+								<div className="text-[11px] text-[color:var(--muted)]">Requerida para que el admin pueda iniciar sesión.</div>
+							</div>
+						)}
 				{roleMsg && <p className="text-xs text-[color:var(--text)]">{roleMsg}</p>}
 					</form>
+					)}
+
+					{isSuperadmin && (
+						<form className="space-y-2" onSubmit={saveAdminPermissions}>
+							<div className="flex items-center justify-between gap-2">
+								<div className="text-xs font-medium text-[color:var(--text-h)]">Permisos de admins</div>
+								<button
+									type="button"
+									onClick={loadAdmins}
+									disabled={adminsLoading}
+									className="rounded-md border border-[color:var(--border)] px-2 py-1 text-xs text-[color:var(--text-h)] hover:bg-[color:var(--hover)] disabled:opacity-50"
+								>
+									{adminsLoading ? 'Cargando…' : 'Recargar'}
+								</button>
+							</div>
+							<select
+								value={selectedAdminId}
+								onChange={(e) => setSelectedAdminId(e.target.value)}
+								className="w-full rounded-md border border-[color:var(--border)] bg-transparent px-3 py-2 text-sm"
+							>
+								<option value="">Selecciona admin…</option>
+								{admins.map((a) => (
+									<option key={a.id} value={String(a.id)}>
+										{a.email}
+									</option>
+								))}
+							</select>
+							{selectedAdmin && (
+								<div className="text-[11px] text-[color:var(--muted)]">
+									{selectedAdmin.has_password ? 'Con contraseña' : 'Sin contraseña'}
+									{selectedAdmin.username ? ` · @${selectedAdmin.username}` : ''}
+								</div>
+							)}
+							<label className="flex items-center justify-between gap-2 rounded-md border border-[color:var(--border)] p-2 text-xs text-[color:var(--text)]">
+								<span>
+									<span className="font-medium text-[color:var(--text-h)]">Acceso total</span>
+									<span className="ml-2 text-[11px] text-[color:var(--muted)]">(recomendado para admins “principales”)</span>
+								</span>
+								<input
+									type="checkbox"
+									checked={adminFullAccess}
+									onChange={(e) => setAdminFullAccess(e.target.checked)}
+								/>
+							</label>
+							<div className={'rounded-md border border-[color:var(--border)] p-2 ' + (adminFullAccess ? 'opacity-50' : '')}>
+								<div className="text-xs font-medium text-[color:var(--text-h)]">Permisos (si NO es acceso total)</div>
+								<div className="mt-2 grid gap-2">
+									{PERMISSIONS.map((p) => (
+										<label key={p.key} className="flex items-start gap-2 text-sm text-[color:var(--text)]">
+											<input
+												type="checkbox"
+												disabled={adminFullAccess}
+												checked={adminPerms.has(p.key)}
+												onChange={() => toggleAdminPerm(p.key)}
+												className="mt-1"
+											/>
+											<span>
+												<span className="font-medium text-[color:var(--text-h)]">{p.label}</span>
+												{p.hint ? <span className="ml-2 text-[11px] text-[color:var(--muted)]">{p.hint}</span> : null}
+											</span>
+										</label>
+									))}
+								</div>
+							</div>
+							<button
+								disabled={!selectedAdmin || adminSaving}
+								className="w-full rounded-md bg-[color:var(--accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+							>
+								{adminSaving ? 'Guardando…' : 'Guardar permisos de admin'}
+							</button>
+							{adminsMsg && <p className="text-xs text-[color:var(--text)]">{adminsMsg}</p>}
+						</form>
+					)}
 
 					<form className="space-y-2" onSubmit={createEmployee}>
 						<div className="flex items-center justify-between gap-2">
@@ -291,6 +542,12 @@ export function AdminEmployeesModule({ employees, onRefresh }) {
 					className="w-full rounded-md border border-[color:var(--border)] bg-transparent px-3 py-2 text-sm"
 					placeholder="Celular (opcional)"
 				/>
+								<input
+									value={eJobTitle}
+									onChange={(e) => setEJobTitle(e.target.value)}
+									className="w-full rounded-md border border-[color:var(--border)] bg-transparent px-3 py-2 text-sm"
+									placeholder="Cargo (opcional)"
+								/>
 				<div className="flex items-center justify-between gap-2">
 					<div className="text-xs text-[color:var(--text)]">Contraseña</div>
 					<label className="flex items-center gap-2 text-xs text-[color:var(--text)]">
@@ -425,7 +682,9 @@ export function AdminEmployeesModule({ employees, onRefresh }) {
 											)}
 										</div>
 										<div className="text-xs text-[color:var(--text)]">
-											{emp.full_name ? emp.full_name : '—'}{emp.phone ? ` · ${emp.phone}` : ''}
+											{emp.full_name ? emp.full_name : '—'}
+											{emp.phone ? ` · ${emp.phone}` : ''}
+											{emp.job_title ? ` · ${emp.job_title}` : ''}
 										</div>
 										<div className="mt-1 text-[11px] text-[color:var(--muted)]">
 											Permisos: {Array.isArray(emp.permissions) && emp.permissions.length ? emp.permissions.join(', ') : '—'}

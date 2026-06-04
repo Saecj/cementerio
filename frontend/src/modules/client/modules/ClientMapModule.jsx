@@ -156,37 +156,13 @@ export function ClientMapModule({ me, selected, onSelect }) {
 	}, [grouped])
 
 	return (
-		<Panel className="client-map-panel p-0">
-			<div className="client-map-hero">
-				<div className="client-map-hero__badge" aria-hidden="true">
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-						<path d="M20 10c0 4.5-5 10-8 12-3-2-8-7.5-8-12a8 8 0 1 1 16 0Z" />
-						<circle cx="12" cy="10" r="3" />
-					</svg>
-				</div>
-				<div className="min-w-0">
-					<div className="ui-kicker">Mapa</div>
-					<div className="mt-1 text-xl font-semibold text-[color:var(--text-h)]">Ubicación y parcelas</div>
-					<div className="mt-1 text-sm text-[color:var(--text)]">Explora el cementerio, revisa tus registros y abre la ubicación general cuando la necesites.</div>
-				</div>
-				<div className="client-map-hero__stats">
-					<div>
-						<span>{grouped.length}</span>
-						<small>registros</small>
-					</div>
-					<div>
-						<span>{markers.length}</span>
-						<small>marcadores</small>
-					</div>
-				</div>
-			</div>
-
-			<div className="client-map-general">
-				<div className="client-map-location-card">
+		<Panel className="p-0">
+			<div className="border-b border-[color:var(--border)] bg-[color:var(--surface)] p-3">
+				<div className="ui-card rounded-md p-3">
 					<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 						<div>
 							<div className="ui-kicker">Ubicación</div>
-							<div className="mt-0.5 text-base font-semibold text-[color:var(--text-h)]">Mapa general del cementerio</div>
+							<div className="mt-0.5 text-sm font-semibold text-[color:var(--text-h)]">Mapa general del cementerio</div>
 							<div className="mt-1 text-xs text-[color:var(--text)]">
 								{cemLocation ? (
 									<>
@@ -253,16 +229,11 @@ export function ClientMapModule({ me, selected, onSelect }) {
 				</div>
 			</div>
 
-			<div className="client-map-layout">
+			<div className="flex flex-col gap-0 lg:flex-row">
 				{/* Lista lateral */}
-				<div className="client-map-sidebar">
-					<div className="client-map-sidebar__head">
-						<div>
-							<div className="text-sm font-semibold text-[color:var(--text-h)]">Difuntos</div>
-							<div className="mt-1 text-xs text-[color:var(--text)]">Marcados en el mapa con un color.</div>
-						</div>
-						<div className="client-map-sidebar__count">{grouped.length}</div>
-					</div>
+				<div className="border-b border-[color:var(--border)] bg-[color:var(--surface)] p-3 lg:w-72 lg:border-b-0 lg:border-r">
+					<div className="text-sm font-semibold text-[color:var(--text-h)]">Difuntos</div>
+					<div className="mt-1 text-xs text-[color:var(--text)]">Marcados en el mapa con un color.</div>
 
 					{!me ? (
 						<div className="mt-3 text-sm text-[color:var(--text)]">Inicia sesión para ver tus difuntos.</div>
@@ -271,7 +242,7 @@ export function ClientMapModule({ me, selected, onSelect }) {
 					{me && error ? <div className="mt-3 text-sm text-red-600">{error}</div> : null}
 
 					{me && !loading && !error ? (
-						<div className="client-map-person-list">
+						<div className="mt-3 space-y-2">
 							{grouped.length === 0 ? (
 								<div className="text-sm text-[color:var(--text)]">Aún no tienes difuntos registrados en tu cuenta.</div>
 							) : (
@@ -287,23 +258,18 @@ export function ClientMapModule({ me, selected, onSelect }) {
 											type="button"
 											onClick={() => onSelect?.(r)}
 											className={
-												'client-map-person ' +
+												'flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm hover:bg-[color:var(--hover)] ' +
 												(active
-													? 'client-map-person--active'
-													: '')
+													? 'border-[color:var(--accent-border)] bg-[color:var(--accent-bg)]'
+													: 'border-[color:var(--border)] bg-[color:var(--surface-2)]')
 											}
 										>
 											<span
-												className="client-map-person__dot"
+												className="h-3 w-3 rounded-full bg-[color:var(--accent)]"
 												style={{ filter: `hue-rotate(${hue}deg) saturate(1.2)` }}
 												aria-hidden="true"
 											/>
-											<span className="min-w-0 flex-1">
-												<span className="block truncate font-semibold text-[color:var(--text-h)]">{name}</span>
-												<span className="mt-0.5 block truncate text-[11px] text-[color:var(--muted)]">
-													{r?.grave_code ? `Tumba ${r.grave_code}` : 'Sin tumba'}{r?.sector_name ? ` · ${r.sector_name}` : ''}
-												</span>
-											</span>
+											<span className="flex-1 text-[color:var(--text-h)]">{name}</span>
 										</button>
 									)
 								})
@@ -313,7 +279,7 @@ export function ClientMapModule({ me, selected, onSelect }) {
 				</div>
 
 				{/* Mapa */}
-				<div className="client-map-stage">
+				<div className="min-w-0 flex-1 p-3">
 					<MapView selected={selected} markers={markers} onSelect={onSelect} />
 				</div>
 			</div>

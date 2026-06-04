@@ -8,11 +8,20 @@ function requireRole(roles) {
 	return (req, res, next) => {
 		if (!req.session?.user) return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
 		const role = req.session.user.role;
-		if (!role || !allowed.includes(role)) {
+		const effectiveRole = role === 'superadmin' ? 'admin' : role;
+		if (!effectiveRole || !allowed.includes(effectiveRole)) {
 			return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
 		}
 		return next();
 	};
+}
+
+function requireSuperadmin(req, res, next) {
+	if (!req.session?.user) return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
+	if (req.session.user.role !== 'superadmin') {
+		return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+	}
+	return next();
 }
 
 function normalizePermissions(value) {
@@ -22,7 +31,15 @@ function normalizePermissions(value) {
 
 function hasAnyPermission(user, required) {
 	const role = user?.role;
-	if (role === 'admin') return true;
+	if (role === 'superadmin') return true;
+	if (role === 'admin') {
+		// Si no está configurado, mantiene el comportamiento actual: acceso total.
+		if (user?.permissions == null) return true;
+		const userPerms = new Set(normalizePermissions(user?.permissions));
+		const requiredPerms = normalizePermissions(required);
+		if (requiredPerms.length === 0) return true;
+		return requiredPerms.some((p) => userPerms.has(p));
+	}
 	if (role !== 'employee') return false;
 	const userPerms = new Set(normalizePermissions(user?.permissions));
 	const requiredPerms = normalizePermissions(required);
@@ -46,4 +63,5 @@ module.exports = {
 	requireAuth,
 	requireRole,
 	requirePermission,
+	requireSuperadmin,
 };

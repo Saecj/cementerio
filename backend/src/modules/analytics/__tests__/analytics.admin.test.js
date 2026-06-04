@@ -106,4 +106,34 @@ describe('analytics/admin', () => {
 		expect(res.body.branches).toHaveLength(1);
 		expect(res.body.branches[0].reviews_count).toBe(0);
 	});
+
+	test('GET /api/admin/analytics/branch-report.pdf: devuelve PDF', async () => {
+		db.query
+			.mockResolvedValueOnce({
+				rows: [
+					{
+						day: '2026-05-19',
+						graves_created: 1,
+						deceased_created: 0,
+						burials_created: 0,
+						reservations_created: 2,
+						payments_created: 1,
+						payments_paid: 1,
+						reviews_count: 0,
+						reviews_rating_sum: 0,
+						reviews_avg_rating: 0,
+					},
+				],
+			})
+			.mockResolvedValueOnce({ rows: [{ id: 1, name: 'Sede A' }], rowCount: 1 });
+
+		const app = makeApp();
+		const res = await request(app)
+			.get('/api/admin/analytics/branch-report.pdf?branchId=1&days=7')
+			.set('x-test-user', JSON.stringify({ id: 1, role: 'admin' }));
+
+		expect(res.status).toBe(200);
+		expect(res.headers['content-type']).toMatch(/application\/pdf/);
+		expect(res.headers['content-disposition']).toMatch(/attachment/);
+	});
 });

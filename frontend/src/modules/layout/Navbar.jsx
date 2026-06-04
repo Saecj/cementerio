@@ -90,7 +90,7 @@ export function Navbar({
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 	const [navQuery, setNavQuery] = useState('')
 	const count = Array.isArray(notifications) ? notifications.length : 0
-	const isStaff = me?.role === 'admin' || me?.role === 'employee'
+	const isStaff = me?.role === 'admin' || me?.role === 'superadmin' || me?.role === 'employee'
 
 	useEffect(() => {
 		if (!me) setNotifOpen(false)
@@ -264,7 +264,7 @@ export function Navbar({
 									<span aria-hidden="true" className="mr-2">
 										🪦
 									</span>
-									<span className="bg-[var(--btn-gradient)] bg-clip-text text-transparent">QRKATA</span>
+									<span className="bg-[var(--btn-gradient)] bg-clip-text text-#fff">QRKATA</span>
 								</div>
 								<div className="text-xs text-[color:var(--text)]">Cementerio digital</div>
 							</div>

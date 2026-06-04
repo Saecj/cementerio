@@ -828,7 +828,7 @@ export function HomeView({
 			{/* Camposantos destacados (separado de la cabecera) */}
 			<FeaturedCemeteriesPanel branches={branches} loading={branchesLoading} error={branchesError || branchesSummaryError} />
 
-			<Panel className="client-available-panel p-0 overflow-hidden">
+			<Panel className="p-0 overflow-hidden">
 				<div className="p-4">
 					{lastReservation ? (
 						<div className="mb-3 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-2)] px-3 py-3 text-sm text-[color:var(--text)]">
@@ -899,29 +899,18 @@ export function HomeView({
 					{msg && <div className="mb-3 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-2)] px-3 py-2 text-sm text-[color:var(--text)]">{msg}</div>}
 					{error && <div className="mb-3 text-sm text-red-600">{error}</div>}
 
-					<div className="client-available-head">
-						<div className="flex min-w-0 items-center gap-3">
-							<div className="client-available-head__icon" aria-hidden="true">
-								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-									<path d="M4 19h16" />
-									<path d="M6 19V8a6 6 0 0 1 12 0v11" />
-									<path d="M8 11h8" />
-									<path d="M9 15h6" />
-								</svg>
-							</div>
-							<div className="min-w-0">
-								<div className="ui-kicker">Reservas</div>
-								<div className="ui-title text-lg font-semibold md:text-xl">Tumbas disponibles</div>
-								<div className="mt-1 text-xs text-[color:var(--muted)]">Elige una parcela y completa la reserva en el panel guiado.</div>
-							</div>
+					<div className="flex items-center justify-between gap-3">
+						<div>
+							<div className="ui-title text-base font-semibold md:text-lg">Tumbas disponibles</div>
+							<div className="mt-1 text-xs text-[color:var(--muted)]">También puedes reservar desde el mapa por sector.</div>
 						</div>
-							<div className="client-available-tools">
+							<div className="flex items-center gap-2">
 								{Array.isArray(branches) && branches.length > 0 ? (
 									<select
 										value={activeBranchId}
 										onChange={(e) => setActiveBranchId(e.target.value)}
 										disabled={branchesLoading}
-										className="client-available-select h-10 rounded-md border border-[color:var(--border)] bg-transparent px-3 text-xs text-[color:var(--text-h)] disabled:opacity-50"
+										className="h-9 rounded-md border border-[color:var(--border)] bg-transparent px-3 text-xs text-[color:var(--text-h)] disabled:opacity-50"
 										aria-label="Sucursal"
 									>
 										{branches.map((b) => (
@@ -931,10 +920,7 @@ export function HomeView({
 										))}
 									</select>
 								) : null}
-								<div className="client-available-count">
-									<span>{available.length}</span>
-									<small>disponibles</small>
-								</div>
+								<div className="ui-chip">{available.length} disponibles</div>
 							</div>
 					</div>
 						{branchesError ? <div className="mt-2 text-xs text-red-600">{branchesError}</div> : null}
@@ -947,54 +933,48 @@ export function HomeView({
 					)}
 
 					{!loading && available.length > 0 && (
-						<div className="client-grave-grid mt-4">
+						<div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 							{available.map((g) => (
-								<div key={g.id} className="ui-card ui-card--grave client-grave-card group overflow-hidden">
-									<div className="client-grave-card__media">
+								<div key={g.id} className="ui-card ui-card--grave group overflow-hidden">
+									<div className="relative">
 										<img
 											src={graveCardImg}
 											alt="Tumba disponible"
-											className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+											className="h-60 w-full object-cover opacity-90 transition duration-300 group-hover:opacity-100 md:h-64"
 											loading="lazy"
 										/>
-										<div className="client-grave-card__overlay" />
-										<div className="client-grave-card__status">Disponible</div>
-										<div className="client-grave-card__media-code">{g.code}</div>
+										<div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent" />
 									</div>
 
-									<div className="client-grave-card__body">
-										<div className="flex items-start justify-between gap-3">
-											<div className="min-w-0">
-												<div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--muted)]">Parcela</div>
-												<div className="mt-0.5 truncate text-xl font-semibold tracking-tight text-[color:var(--text-h)]">{g.code}</div>
-											</div>
-											<div className="client-grave-card__price">
+									<div className="p-3 md:p-4">
+										<div className="flex items-center justify-between gap-2">
+											<div className="text-xl font-semibold tracking-tight text-[color:var(--text-h)]">{g.code}</div>
+											<div className="ui-chip" style={{ padding: '5px 10px', fontSize: 12 }}>
 												{formatMoney(g.price_cents, 'PEN')}
 											</div>
 										</div>
 
-										<div className="client-grave-card__facts">
-											<div className="client-grave-card__fact">
-												<span>Sección</span>
-												<strong>{g.sector_name || '—'}</strong>
+										<div className="mt-3 grid grid-cols-3 gap-2 text-[12px] text-[color:var(--text)]">
+											<div>
+												<div className="font-semibold tracking-wide text-[color:var(--muted)]">Sección</div>
+												<div className="mt-0.5 text-sm font-semibold text-[color:var(--text-h)]">{g.sector_name || '—'}</div>
 											</div>
-											<div className="client-grave-card__fact">
-												<span>Fila</span>
-												<strong>{g.row_number ?? '—'}</strong>
+											<div>
+												<div className="font-semibold tracking-wide text-[color:var(--muted)]">Fila</div>
+												<div className="mt-0.5 text-sm font-semibold text-[color:var(--text-h)]">{g.row_number ?? '—'}</div>
 											</div>
-											<div className="client-grave-card__fact">
-												<span>Col</span>
-												<strong>{g.col_number ?? '—'}</strong>
+											<div>
+												<div className="font-semibold tracking-wide text-[color:var(--muted)]">Col</div>
+												<div className="mt-0.5 text-sm font-semibold text-[color:var(--text-h)]">{g.col_number ?? '—'}</div>
 											</div>
 										</div>
 
 										<button
 											type="button"
 											onClick={() => openReserveModal(g)}
-											className="client-grave-card__button bg-[color:var(--accent)] text-[color:var(--on-accent)]"
+											className="mt-4 w-full rounded-lg bg-[color:var(--accent)] px-3 py-2.5 text-xs font-semibold text-[color:var(--on-accent)]"
 										>
-											<span>{me ? 'Reservar parcela' : 'Ver y reservar'}</span>
-											<span aria-hidden="true">→</span>
+											{me ? 'Reservar' : 'Ver y reservar'}
 										</button>
 									</div>
 								</div>

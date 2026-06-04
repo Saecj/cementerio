@@ -267,6 +267,9 @@ function buildReservationsClientRouter() {
 						l.col_number,
 						l.latitude,
 						l.longitude,
+						r.reserved_deceased_full_name,
+						occ.deceased_full_name AS occupied_deceased_full_name,
+						(occ.burial_id IS NOT NULL) AS has_burial,
 						COALESCE(r.reserved_deceased_full_name, occ.deceased_full_name) AS deceased_full_name,
 						COALESCE(pay.paid_cents, 0) AS paid_cents,
 						COALESCE(pay.pending_cents, 0) AS pending_cents,
@@ -281,11 +284,13 @@ function buildReservationsClientRouter() {
 					LEFT JOIN sectors s ON s.id = l.sector_id
 					LEFT JOIN branches b ON b.id = s.branch_id
 					LEFT JOIN LATERAL (
-						SELECT (d.last_name || ' ' || d.first_name) AS deceased_full_name
-						FROM burials b
-						JOIN deceased d ON d.id = b.deceased_id
-						WHERE b.grave_id = g.id
-						ORDER BY b.id DESC
+						SELECT
+							bu.id AS burial_id,
+							(d.last_name || ' ' || d.first_name) AS deceased_full_name
+						FROM burials bu
+						JOIN deceased d ON d.id = bu.deceased_id
+						WHERE bu.grave_id = g.id
+						ORDER BY bu.id DESC
 						LIMIT 1
 					) occ ON true
 					LEFT JOIN (
@@ -316,6 +321,9 @@ function buildReservationsClientRouter() {
 						l.col_number,
 						l.latitude,
 						l.longitude,
+						NULL::text AS reserved_deceased_full_name,
+						occ.deceased_full_name AS occupied_deceased_full_name,
+						(occ.burial_id IS NOT NULL) AS has_burial,
 						occ.deceased_full_name,
 						COALESCE(pay.paid_cents, 0) AS paid_cents,
 						COALESCE(pay.pending_cents, 0) AS pending_cents,
@@ -330,11 +338,13 @@ function buildReservationsClientRouter() {
 					LEFT JOIN sectors s ON s.id = l.sector_id
 					LEFT JOIN branches b ON b.id = s.branch_id
 					LEFT JOIN LATERAL (
-						SELECT (d.last_name || ' ' || d.first_name) AS deceased_full_name
-						FROM burials b
-						JOIN deceased d ON d.id = b.deceased_id
-						WHERE b.grave_id = g.id
-						ORDER BY b.id DESC
+						SELECT
+							bu.id AS burial_id,
+							(d.last_name || ' ' || d.first_name) AS deceased_full_name
+						FROM burials bu
+						JOIN deceased d ON d.id = bu.deceased_id
+						WHERE bu.grave_id = g.id
+						ORDER BY bu.id DESC
 						LIMIT 1
 					) occ ON true
 					LEFT JOIN (
@@ -354,6 +364,43 @@ function buildReservationsClientRouter() {
 		);
 
 		return res.status(200).json({ ok: true, reservations: result.rows });
+	});
+
+	// Cliente: cancelar su reserva (solo si está pending)
+	// Ej: POST /api/client/reservations/123/cancel
+	router.post('/client/reservations/:id/cancel', requireAuth, async (req, res) => {
+		const userId = req.session.user.id;
+		const clientId = await getClientIdOrNull(userId);
+		if (!clientId) return res.status(403).json({ ok: false, error: 'CLIENT_REQUIRED' });
+
+		const id = Number(req.params.id);
+		if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: 'ID_INVALID' });
+
+		const result = await db.withTransaction(async (client) => {
+			const currentResult = await client.query(
+				`SELECT id, status
+				 FROM reservations
+				 WHERE id = $1 AND client_id = $2
+				 FOR UPDATE`,
+				[id, clientId],
+			);
+			const current = currentResult.rows[0];
+			if (!current) return { kind: 'not_found' };
+			if (current.status !== 'pending') return { kind: 'not_cancellable', status: current.status };
+
+			const updated = await client.query(
+				`UPDATE reservations
+				 SET status = 'cancelled'
+				 WHERE id = $1
+				 RETURNING id, reservation_code, client_id, grave_id, reserved_from, reserved_to, status, created_at`,
+				[id],
+			);
+			return { kind: 'ok', reservation: updated.rows[0] };
+		});
+
+		if (result.kind === 'not_found') return res.status(404).json({ ok: false, error: 'RESERVATION_NOT_FOUND' });
+		if (result.kind === 'not_cancellable') return res.status(409).json({ ok: false, error: 'RESERVATION_NOT_PENDING' });
+		return res.status(200).json({ ok: true, reservation: result.reservation });
 	});
 
 	return router;

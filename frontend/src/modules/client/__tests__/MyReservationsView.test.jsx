@@ -1,5 +1,6 @@
 import React from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 const mockApi = jest.fn()
 jest.mock('../../../lib/api', () => ({ api: (...args) => mockApi(...args) }))
@@ -56,6 +57,83 @@ describe('MyReservationsView', () => {
 		await waitFor(() => {
 			expect(screen.getByText('RSV-001')).toBeInTheDocument()
 			expect(screen.getByText('t-0009')).toBeInTheDocument()
+		})
+
+		expect(screen.getByRole('button', { name: /Cancelar/i })).toBeInTheDocument()
+	})
+
+	test('permite cancelar una reserva pendiente', async () => {
+		mockApi
+			.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				data: {
+					reservations: [
+						{
+							id: 1,
+							reservation_code: 'RSV-001',
+							grave_code: 't-0009',
+							sector_name: 'A',
+							row_number: 1,
+							col_number: 2,
+							deceased_full_name: 'Juan Pérez',
+							status: 'pending',
+							created_at: new Date().toISOString(),
+							price_cents: 20000,
+							paid_cents: 0,
+							pending_cents: 0,
+							due_cents: 0,
+						},
+					],
+				},
+			})
+			.mockResolvedValueOnce({ ok: true, status: 200, data: { reservation: { id: 1, status: 'cancelled' } } })
+			.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				data: {
+					reservations: [
+						{
+							id: 1,
+							reservation_code: 'RSV-001',
+							grave_code: 't-0009',
+							sector_name: 'A',
+							row_number: 1,
+							col_number: 2,
+							deceased_full_name: 'Juan Pérez',
+							status: 'cancelled',
+							created_at: new Date().toISOString(),
+							price_cents: 20000,
+							paid_cents: 0,
+							pending_cents: 0,
+							due_cents: 0,
+						},
+					],
+				},
+			})
+
+		render(
+			<MyReservationsView
+				me={{ id: 10, role: 'client', email: 'c@x.com' }}
+				onLogin={() => {}}
+				onPayReservation={() => {}}
+				filterSeed={{ q: '', ts: 0 }}
+			/>,
+		)
+
+		await waitFor(() => {
+			expect(screen.getByText('RSV-001')).toBeInTheDocument()
+		})
+
+		const btn = screen.getByRole('button', { name: /Cancelar/i })
+		await userEvent.click(btn)
+
+		await waitFor(() => {
+			expect(mockApi).toHaveBeenCalledWith('/api/client/reservations/1/cancel', expect.objectContaining({ method: 'POST' }))
+		})
+
+		await waitFor(() => {
+			expect(screen.getByText(/Cancelada/i)).toBeInTheDocument()
 		})
 	})
 })

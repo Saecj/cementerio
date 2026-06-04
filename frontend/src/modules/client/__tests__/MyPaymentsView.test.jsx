@@ -16,7 +16,7 @@ describe('MyPaymentsView', () => {
 		expect(screen.getByText(/Inicia sesión para ver tus pagos/i)).toBeInTheDocument()
 	})
 
-	test('renderiza pagos y botón Pagar (con mocks de API)', async () => {
+	test('renderiza pagos y acciones principales (con mocks de API)', async () => {
 		mockApi.mockImplementation(async (path) => {
 			if (String(path).startsWith('/api/client/payments')) {
 				return {
@@ -49,6 +49,7 @@ describe('MyPaymentsView', () => {
 			expect(screen.getByText(/Mis pagos/i)).toBeInTheDocument()
 		})
 
-		expect(screen.getByRole('button', { name: /^Pagar$/i })).toBeInTheDocument()
+		expect(screen.getByRole('button', { name: /Registrar pago/i })).toBeInTheDocument()
+		expect(screen.getByRole('link', { name: /Descargar boleta/i })).toBeInTheDocument()
 	})
 })

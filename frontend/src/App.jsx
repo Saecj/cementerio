@@ -231,10 +231,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me, meKey])
 
-	const isStaff = me?.role === 'admin' || me?.role === 'employee'
+  const isAdmin = me?.role === 'admin' || me?.role === 'superadmin'
+  const isStaff = isAdmin || me?.role === 'employee'
 
   const tabs = useMemo(() => {
-    if (me?.role === 'admin') {
+    if (isAdmin) {
       return [
         { id: 'admin', label: 'Administrador' },
         { id: 'client', label: 'Vista cliente' },
@@ -244,7 +245,7 @@ export default function App() {
 			return [{ id: 'admin', label: 'Administrador' }]
 		}
     return clientTabs
-  }, [me?.role, clientTabs])
+  }, [isAdmin, me?.role, clientTabs])
 
   function isLikelyReservationCode(q) {
     const s = String(q || '').trim()
@@ -308,14 +309,14 @@ export default function App() {
   }, [activeTab, me?.role])
 
   useEffect(() => {
-    if (me?.role === 'admin') {
+    if (isAdmin) {
 			setActiveTab((prev) => (prev === 'admin' || prev === 'client' ? prev : 'admin'))
 			setClientActiveTab((prev) => (clientTabs.some((t) => t.id === prev) ? prev : 'home'))
     }
     if (me?.role === 'employee') {
       setActiveTab('admin')
     }
-  }, [me?.role, clientTabs])
+  }, [isAdmin, me?.role, clientTabs])
 
   async function logout() {
     await api('/api/auth/logout', { method: 'POST' })
@@ -331,7 +332,7 @@ export default function App() {
   function goToPaymentsWithReservation(reservationCode) {
     if (!reservationCode) return
     setPaymentIntent({ reservationCode: String(reservationCode), ts: Date.now() })
-    if (me?.role === 'admin') {
+    if (isAdmin) {
       setActiveTab('client')
       setClientActiveTab('payments')
     } else {
@@ -341,7 +342,7 @@ export default function App() {
 
   function goToClientTab(tabId) {
     if (!tabId) return
-    if (me?.role === 'admin') {
+    if (isAdmin) {
       setActiveTab('client')
       setClientActiveTab(tabId)
     } else {
@@ -402,7 +403,7 @@ export default function App() {
                   </Panel>
                 )}
 
-                {activeTab === 'client' && me?.role === 'admin' && (
+                {activeTab === 'client' && isAdmin && (
                   <>
                     <ClientPanel
                       me={me}
@@ -450,7 +451,7 @@ export default function App() {
 					paymentsSeed={clientPaymentsSeed}
                 />
 
-                {activeTab === 'admin' && me?.role === 'admin' && (
+                {activeTab === 'admin' && isAdmin && (
                   <Panel>
                     <AdminPanel />
                   </Panel>
@@ -462,7 +463,7 @@ export default function App() {
       </main>
 
       <Footer />
-      <WhatsAppConsultButton />
+      {me?.role === 'client' ? <WhatsAppConsultButton /> : null}
     </div>
   )
 }

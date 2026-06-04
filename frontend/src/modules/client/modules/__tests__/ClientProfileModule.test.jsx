@@ -42,7 +42,8 @@ describe('ClientProfileModule', () => {
 		)
 
 		await waitFor(() => {
-			expect(screen.getByText(/Perfil/i)).toBeInTheDocument()
+			expect(screen.getByText(/Cuenta cliente/i)).toBeInTheDocument()
+			expect(screen.getByText(/Información de cuenta/i)).toBeInTheDocument()
 			expect(screen.getAllByText('c@x.com').length).toBeGreaterThan(0)
 		})
 

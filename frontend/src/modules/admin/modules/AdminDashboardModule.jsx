@@ -105,6 +105,7 @@ export function AdminDashboardModule({ branches, sectors, graves, deceased, empl
 	const [recentReviews, setRecentReviews] = useState([])
 	const [recentReviewsLoading, setRecentReviewsLoading] = useState(false)
 	const [recentReviewsError, setRecentReviewsError] = useState('')
+	const [pdfDownloading, setPdfDownloading] = useState(false)
 
 	async function loadAnalytics(branchId) {
 		setAnalyticsLoading(true)
@@ -154,6 +155,43 @@ export function AdminDashboardModule({ branches, sectors, graves, deceased, empl
 			setRecentReviews(Array.isArray(r.data?.reviews) ? r.data.reviews : [])
 		} finally {
 			setRecentReviewsLoading(false)
+		}
+	}
+
+	async function downloadBranchAnalyticsPdf() {
+		if (activeBranchIdN == null) return
+		if (pdfDownloading) return
+		setPdfDownloading(true)
+		let url = ''
+		try {
+			const params = new URLSearchParams()
+			params.set('branchId', String(activeBranchIdN))
+			params.set('days', String(analyticsDays))
+			url = `/api/admin/analytics/branch-report.pdf?${params.toString()}`
+
+			const res = await fetch(url, { credentials: 'include' })
+			if (!res.ok) throw new Error(`HTTP_${res.status}`)
+
+			const blob = await res.blob()
+			const cd = res.headers.get('content-disposition') || ''
+			const filenameMatch = cd.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i)
+			const rawName = decodeURIComponent(filenameMatch?.[1] || filenameMatch?.[2] || '')
+			const filename = rawName && rawName.trim() ? rawName.trim() : 'reporte-sucursal.pdf'
+
+			const objectUrl = window.URL.createObjectURL(blob)
+			const a = document.createElement('a')
+			a.href = objectUrl
+			a.download = filename
+			a.rel = 'noopener'
+			document.body.appendChild(a)
+			a.click()
+			a.remove()
+			window.URL.revokeObjectURL(objectUrl)
+		} catch {
+			// Fallback: navegación directa (manejada por el navegador)
+			if (url) window.location.assign(url)
+		} finally {
+			setPdfDownloading(false)
 		}
 	}
 
@@ -274,6 +312,15 @@ export function AdminDashboardModule({ branches, sectors, graves, deceased, empl
 								))}
 							</select>
 						</div>
+						<button
+							type="button"
+							onClick={downloadBranchAnalyticsPdf}
+							disabled={activeBranchIdN == null || pdfDownloading}
+							className="h-[38px] rounded-md border border-[color:var(--border)] px-3 text-sm text-[color:var(--text-h)] hover:bg-[color:var(--hover)] disabled:opacity-50"
+							title="Descargar PDF"
+						>
+							{pdfDownloading ? 'Descargando…' : 'PDF'}
+						</button>
 						<button
 							type="button"
 							onClick={() => {

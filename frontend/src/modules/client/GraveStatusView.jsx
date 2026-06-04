@@ -26,6 +26,15 @@ function prettyReservationStatus(status) {
 	return map[s] || s
 }
 
+function reservationHint(status) {
+	const s = String(status || '')
+	if (s === 'confirmed') return 'Aprobada por administración.'
+	if (s === 'pending') return 'En revisión. Te avisaremos cuando se apruebe.'
+	if (s === 'cancelled' || s === 'canceled') return 'Esta solicitud fue anulada.'
+	if (s === 'rejected') return 'La solicitud fue rechazada.'
+	return ''
+}
+
 function prettyPaymentStatus(status) {
 	if (!status) return '—'
 	const s = String(status)
@@ -149,6 +158,9 @@ export function GraveStatusView({ me, selected, onGoToMap }) {
 				<div>
 					<div className="ui-kicker">Seguimiento</div>
 					<h2 className="mt-1 text-lg font-semibold text-[color:var(--text-h)]">Estado actual</h2>
+					<div className="mt-1 text-xs text-[color:var(--muted)]">
+						Aquí verás si tu reserva fue aprobada, el estado del pago y si ya existe un ingreso (inhumación) en la tumba.
+					</div>
 				</div>
 				<div className="client-section-heading__meta">{rows.length} registros</div>
 			</div>
@@ -156,14 +168,18 @@ export function GraveStatusView({ me, selected, onGoToMap }) {
 				{rows.map((r) => {
 					const key = recordKey(r)
 					const isActive = selectedKey && key && selectedKey === key
+					const reservedName = (r?.reserved_deceased_full_name || '').trim()
+					const occupiedName = (r?.occupied_deceased_full_name || '').trim()
 					const displayName =
-						r.deceased_full_name || `${r.last_name || ''} ${r.first_name || ''}`.trim() || '—'
-					const reservationStatus = prettyReservationStatus(r.status)
+						reservedName || occupiedName || r.deceased_full_name || `${r.last_name || ''} ${r.first_name || ''}`.trim() || '—'
+					const reservationStatusKey = String(r?.status || '')
+					const reservationStatus = prettyReservationStatus(reservationStatusKey)
 					const graveStatus = prettyStatus(r.grave_status)
 					const pay = paymentByReservationCode.get(String(r.reservation_code || '').trim())
 					const payStatus = pay ? prettyPaymentStatus(pay.status) : '—'
 					const hasPayment = Boolean(pay)
 					const isPaid = pay?.status === 'paid'
+					const hasBurial = Boolean(r?.has_burial) || String(r?.grave_status || '') === 'occupied'
 
 					return (
 						<div
@@ -178,14 +194,28 @@ export function GraveStatusView({ me, selected, onGoToMap }) {
 									{String(displayName || '?').slice(0, 1).toUpperCase()}
 								</div>
 								<div className="min-w-0">
-									<div className="ui-kicker">Difunto</div>
+									<div className="ui-kicker">Difunto asociado</div>
 									<div className="mt-0.5 truncate text-base font-semibold text-[color:var(--text-h)]">{displayName}</div>
-									<div className="mt-1 text-xs text-[color:var(--muted)]">{r.reservation_code || 'Reserva sin código'}</div>
+									<div className="mt-1 text-xs text-[color:var(--muted)]">
+										{r.reservation_code || 'Reserva sin código'}
+										{r.branch_name ? ` · Sede: ${r.branch_name}` : ''}
+									</div>
+									{hasBurial && occupiedName && occupiedName !== displayName ? (
+										<div className="mt-1 text-xs text-[color:var(--text)]">
+											<strong>En tumba:</strong> {occupiedName}
+										</div>
+									) : null}
+									{reservationHint(reservationStatusKey) ? (
+										<div className="mt-1 text-[11px] text-[color:var(--muted)]">{reservationHint(reservationStatusKey)}</div>
+									) : null}
 								</div>
 								<div className="flex flex-wrap items-center gap-2">
 									<StatusPill tone="accent">Reserva: {reservationStatus}</StatusPill>
 									<StatusPill tone={isPaid ? 'accent' : 'neutral'}>
 										Pago: {hasPayment ? payStatus : 'Sin registro'}
+									</StatusPill>
+									<StatusPill tone={hasBurial ? 'accent' : 'neutral'}>
+										Ingreso: {hasBurial ? 'Registrado' : 'Pendiente'}
 									</StatusPill>
 								</div>
 							</div>
@@ -204,20 +234,30 @@ export function GraveStatusView({ me, selected, onGoToMap }) {
 										{r.col_number != null ? ` / Col ${r.col_number}` : ' / Col —'}
 									</small>
 								</div>
+								<div className="client-info-tile">
+									<span>Sede</span>
+									<strong>{r.branch_name || '—'}</strong>
+									<small>Atención por sede</small>
+								</div>
+								<div className="client-info-tile">
+									<span>Ingreso (inhumación)</span>
+									<strong>{hasBurial ? 'Sí' : 'No'}</strong>
+									<small>{hasBurial ? 'Ya se registró un ingreso en esta tumba.' : 'Aún no se registró un ingreso.'}</small>
+								</div>
 							</div>
 
 							<div className="client-status-steps">
-								<div className="client-status-step client-status-step--done">
+								<div className={'client-status-step ' + (reservationStatusKey === 'confirmed' ? 'client-status-step--done' : '')}>
 									<span />
-									Reserva
+									Aprobación
 								</div>
-								<div className={'client-status-step ' + (hasPayment ? 'client-status-step--done' : '')}>
+								<div className={'client-status-step ' + (isPaid ? 'client-status-step--done' : '')}>
 									<span />
-									Pago
+									Pago confirmado
 								</div>
-								<div className={'client-status-step ' + (String(r.grave_status || '') === 'occupied' ? 'client-status-step--done' : '')}>
+								<div className={'client-status-step ' + (hasBurial ? 'client-status-step--done' : '')}>
 									<span />
-									Parcela
+									Ingreso
 								</div>
 							</div>
 
