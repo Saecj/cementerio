@@ -12,6 +12,10 @@ function createMailerFromEnv(env) {
 		port,
 		secure: String(env.SMTP_SECURE || '').toLowerCase() === 'true',
 		auth: { user, pass },
+
+		connectionTimeout: 10000,
+		greetingTimeout: 10000,
+		socketTimeout: 10000,
 	});
 }
 
