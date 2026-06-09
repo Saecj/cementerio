@@ -31,7 +31,16 @@ function buildAuthRouter() {
 
 		const mailer = createMailerFromEnv(process.env);
 		if (mailer) {
-			await mailer.sendMail({ from, to: email, subject, text });
+			console.log('OTP: intentando enviar correo');
+
+			const info = await mailer.sendMail({
+				from,
+				to: email,
+				subject,
+				text,
+			});
+
+			console.log('OTP: correo enviado', info);
 		} else {
 			console.warn(`[auth] SMTP no configurado; código OTP para ${email}: ${code}`);
 		}
@@ -257,7 +266,16 @@ function buildAuthRouter() {
 		const text = `Tu código de verificación para ${appName} es: ${code}.\n\nVence en ${expiresMinutes} minutos.`;
 		const mailer = createMailerFromEnv(process.env);
 		if (mailer) {
-			await mailer.sendMail({ from, to: email, subject, text });
+
+			console.log('Intentando enviar correo...');
+			const info = await mailer.sendMail({
+				from,
+				to: email,
+				subject,
+				text,
+			});
+			console.log('Correo enviado:', info);
+
 		} else {
 			console.warn(`[auth] SMTP no configurado; código de verificación para ${email}: ${code}`);
 		}
