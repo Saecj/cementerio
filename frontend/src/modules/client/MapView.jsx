@@ -10,13 +10,13 @@ function recordKey(r) {
 	return ''
 }
 
-export function MapView({ selected, markers = [], onSelect }) {
+export function MapView({ selected, markers = [], sections = [], onSelect }) {
 	const [gmOpen, setGmOpen] = useState(false)
 	const [gmEverOpened, setGmEverOpened] = useState(false)
 
 	const displayName = useMemo(() => {
 		if (!selected) return ''
-		return selected.deceased_full_name || `${selected.last_name || ''} ${selected.first_name || ''}`.trim() || ''
+		return selected.deceased_full_name || selected.reserved_deceased_full_name || selected.occupied_deceased_full_name || `${selected.last_name || ''} ${selected.first_name || ''}`.trim() || ''
 	}, [selected])
 
 	const coords = useMemo(() => {
@@ -48,10 +48,10 @@ export function MapView({ selected, markers = [], onSelect }) {
 			<div className="client-map-view__header">
 				<div className="client-map-selected-card">
 					<div className="ui-kicker">Mapa</div>
-					<div className="mt-0.5 text-base font-semibold text-[color:var(--text-h)]">Mapa del cementerio</div>
+					<div className="mt-0.5 text-base font-semibold text-[color:var(--text-h)]">Ubicación de tus difuntos</div>
 					{selected ? (
 						<div className="mt-1 text-xs text-[color:var(--text)]">
-							<span className="font-medium text-[color:var(--text-h)]">{displayName || '—'}</span>
+							<span className="font-medium text-[color:var(--text-h)]">{displayName || 'Difunto sin nombre'}</span>
 							{selected.grave_code ? ` · Tumba ${selected.grave_code}` : ''}
 							{selected.sector_name ? ` · ${selected.sector_name}` : ''}
 							{selected.row_number != null ? ` / Fila ${selected.row_number}` : ''}
@@ -69,15 +69,24 @@ export function MapView({ selected, markers = [], onSelect }) {
 						</div>
 					) : (
 						<div className="mt-1 text-xs text-[color:var(--text)]">
-							Selecciona un difunto en <span className="font-medium text-[color:var(--text-h)]">Búsqueda</span> para ver su ubicación.
+							Selecciona un difunto de la lista para resaltarlo en el cementerio 3D.
 						</div>
 					)}
 				</div>
 
-				<div className="client-map-help">
-					<span>Arrastra para rotar</span>
-					<span>Scroll para zoom</span>
-					<span>Clic para explorar</span>
+				<div className="client-map-help client-map-help--stats">
+					<div>
+						<strong>{sections.length || 1}</strong>
+						<span>Secciones</span>
+					</div>
+					<div>
+						<strong>{markers.length}</strong>
+						<span>Difuntos</span>
+					</div>
+					<div>
+						<strong>{selected ? '1' : '0'}</strong>
+						<span>Selección</span>
+					</div>
 				</div>
 			</div>
 
@@ -148,7 +157,7 @@ export function MapView({ selected, markers = [], onSelect }) {
 
 			{/* Mapa 3D (reemplaza la imagen) */}
 			<div className="client-map-canvas-wrap">
-				<Cemetery3DView variant="immersive" markers={markers} selected={selected} onSelect={onSelect} />
+				<Cemetery3DView variant="immersive" markers={markers} sections={sections} selected={selected} onSelect={onSelect} />
 			</div>
 		</div>
 	)

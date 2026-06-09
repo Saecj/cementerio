@@ -22,7 +22,7 @@ describe('ClientMapModule', () => {
 		expect(screen.getByText(/Inicia sesión para ver tus difuntos/i)).toBeInTheDocument()
 	})
 
-	test('carga difuntos desde reservas y permite seleccionar', async () => {
+	test('carga difuntos del mapa y permite seleccionar', async () => {
 		mockApi.mockResolvedValueOnce({
 			ok: true,
 			status: 200,

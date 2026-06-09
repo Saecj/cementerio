@@ -18,6 +18,51 @@ describe('reservations/reservations.client.routes', () => {
 		expect(res.body).toEqual({ ok: false, error: 'UNAUTHORIZED' });
 	});
 
+	test('GET /api/client/cemetery-map: 401 si no hay sesión', async () => {
+		const app = makeTestApp({ router: buildReservationsClientRouter() });
+		const res = await request(app).get('/api/client/cemetery-map');
+
+		expect(res.status).toBe(401);
+		expect(res.body).toEqual({ ok: false, error: 'UNAUTHORIZED' });
+	});
+
+	test('GET /api/client/cemetery-map: devuelve sectores y difuntos del cliente', async () => {
+		db.query
+			.mockResolvedValueOnce({ rows: [{ id: 10 }], rowCount: 1 })
+			.mockResolvedValueOnce({ rows: [{ '?column?': 1 }], rowCount: 1 })
+			.mockResolvedValueOnce({
+			rows: [
+				{
+					id: 1,
+					reservation_code: 'RSV-1',
+					grave_id: 5,
+					grave_code: 'A-01',
+					grave_status: 'available',
+					sector_id: 2,
+					sector_name: 'Sector A',
+					branch_id: 3,
+					branch_name: 'Central',
+					row_number: 1,
+					col_number: 1,
+					deceased_full_name: 'Juan Perez',
+				},
+			],
+			rowCount: 1,
+		});
+
+		const app = makeTestApp({ router: buildReservationsClientRouter() });
+		const res = await request(app)
+			.get('/api/client/cemetery-map')
+			.set('x-test-user', JSON.stringify({ id: 1, role: 'client' }));
+
+		expect(res.status).toBe(200);
+		expect(res.body.ok).toBe(true);
+		expect(res.body.sectors).toEqual([
+			{ id: 2, name: 'Sector A', branch_id: 3, branch_name: 'Central', count: 1 },
+		]);
+		expect(res.body.graves[0].grave_code).toBe('A-01');
+	});
+
 	test('POST /api/client/reservations: 403 si no hay client profile', async () => {
 		db.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 

@@ -5,7 +5,7 @@ function start() {
 	const app = createApp();
 	const port = Number(process.env.PORT) || 3001;
 	app.listen(port, () => {
-		console.log(`Backend escuchando en http://localhost:${port}`);
+		console.log(`Backend escuchando en http://localhost:${port}`); // Modificar
 	});
 
 	// Best-effort: prepara admin inicial si se configuró en env.

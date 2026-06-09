@@ -241,6 +241,137 @@ function buildReservationsClientRouter() {
 		return res.status(200).json({ ok: true, summary: row });
 	});
 
+	// Cliente: payload optimizado para mapa 3D/sectorizado
+	router.get('/client/cemetery-map', requireAuth, async (req, res) => {
+		const userId = req.session.user.id;
+		const clientId = await getClientIdOrNull(userId);
+		if (!clientId) {
+			return res.status(200).json({ ok: true, sectors: [], graves: [] });
+		}
+
+		const hasReservedName = await reservationsHasReservedDeceasedNameColumn();
+		const result = await db.query(
+			hasReservedName
+				? `
+					SELECT
+						r.id,
+						r.reservation_code,
+						r.status,
+						r.reserved_from,
+						r.reserved_to,
+						r.created_at,
+						g.id AS grave_id,
+						g.code AS grave_code,
+						g.status AS grave_status,
+						g.price_cents,
+						g.grave_type_id,
+						gt.name AS grave_type_name,
+						s.id AS sector_id,
+						s.branch_id AS branch_id,
+						b.name AS branch_name,
+						s.name AS sector_name,
+						l.row_number,
+						l.col_number,
+						l.latitude,
+						l.longitude,
+						r.reserved_deceased_full_name,
+						occ.deceased_full_name AS occupied_deceased_full_name,
+						(occ.burial_id IS NOT NULL) AS has_burial,
+						COALESCE(r.reserved_deceased_full_name, occ.deceased_full_name) AS deceased_full_name
+					FROM reservations r
+					JOIN graves g ON g.id = r.grave_id
+					LEFT JOIN grave_types gt ON gt.id = g.grave_type_id
+					LEFT JOIN locations l ON l.id = g.location_id
+					LEFT JOIN sectors s ON s.id = l.sector_id
+					LEFT JOIN branches b ON b.id = s.branch_id
+					LEFT JOIN LATERAL (
+						SELECT
+							bu.id AS burial_id,
+							(d.last_name || ' ' || d.first_name) AS deceased_full_name
+						FROM burials bu
+						JOIN deceased d ON d.id = bu.deceased_id
+						WHERE bu.grave_id = g.id
+						ORDER BY bu.id DESC
+						LIMIT 1
+					) occ ON true
+					WHERE r.client_id = $1
+						AND g.is_enabled IS DISTINCT FROM false
+					ORDER BY b.name ASC NULLS LAST, s.name ASC NULLS LAST, l.row_number ASC NULLS LAST, l.col_number ASC NULLS LAST, r.id DESC
+					LIMIT 200
+				`
+				: `
+					SELECT
+						r.id,
+						r.reservation_code,
+						r.status,
+						r.reserved_from,
+						r.reserved_to,
+						r.created_at,
+						g.id AS grave_id,
+						g.code AS grave_code,
+						g.status AS grave_status,
+						g.price_cents,
+						g.grave_type_id,
+						gt.name AS grave_type_name,
+						s.id AS sector_id,
+						s.branch_id AS branch_id,
+						b.name AS branch_name,
+						s.name AS sector_name,
+						l.row_number,
+						l.col_number,
+						l.latitude,
+						l.longitude,
+						NULL::text AS reserved_deceased_full_name,
+						occ.deceased_full_name AS occupied_deceased_full_name,
+						(occ.burial_id IS NOT NULL) AS has_burial,
+						occ.deceased_full_name
+					FROM reservations r
+					JOIN graves g ON g.id = r.grave_id
+					LEFT JOIN grave_types gt ON gt.id = g.grave_type_id
+					LEFT JOIN locations l ON l.id = g.location_id
+					LEFT JOIN sectors s ON s.id = l.sector_id
+					LEFT JOIN branches b ON b.id = s.branch_id
+					LEFT JOIN LATERAL (
+						SELECT
+							bu.id AS burial_id,
+							(d.last_name || ' ' || d.first_name) AS deceased_full_name
+						FROM burials bu
+						JOIN deceased d ON d.id = bu.deceased_id
+						WHERE bu.grave_id = g.id
+						ORDER BY bu.id DESC
+						LIMIT 1
+					) occ ON true
+					WHERE r.client_id = $1
+						AND g.is_enabled IS DISTINCT FROM false
+					ORDER BY b.name ASC NULLS LAST, s.name ASC NULLS LAST, l.row_number ASC NULLS LAST, l.col_number ASC NULLS LAST, r.id DESC
+					LIMIT 200
+				`,
+			[clientId],
+		);
+
+		const sectorMap = new Map();
+		for (const row of result.rows) {
+			const id = row.sector_id != null ? String(row.sector_id) : String(row.sector_name || 'general');
+			if (!sectorMap.has(id)) {
+				sectorMap.set(id, {
+					id: row.sector_id ?? null,
+					name: row.sector_name || 'Sector general',
+					branch_id: row.branch_id ?? null,
+					branch_name: row.branch_name || null,
+					count: 0,
+				});
+			}
+			sectorMap.get(id).count += 1;
+		}
+
+		return res.status(200).json({
+			ok: true,
+			sectors: Array.from(sectorMap.values()),
+			graves: result.rows,
+			limit: 200,
+		});
+	});
+
 	// Cliente/Visitante: ver sus reservas (si corresponde)
 	router.get('/client/reservations', requireAuth, async (req, res) => {
 		const userId = req.session.user.id;

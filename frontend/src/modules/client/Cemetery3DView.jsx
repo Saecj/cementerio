@@ -14,14 +14,14 @@ function clamp(n, min, max) {
 }
 
 function asName(r) {
-	const grave = String(r?.grave_code || r?.code || '').trim()
-	if (grave) return `Tumba ${grave}`
 	return (
 		r?.deceased_full_name ||
+		r?.reserved_deceased_full_name ||
+		r?.occupied_deceased_full_name ||
 		r?.deceased_name ||
 		r?.deceasedFullName ||
 		`${r?.last_name || ''} ${r?.first_name || ''}`.trim() ||
-		'Difunto'
+		'Difunto sin nombre'
 	)
 }
 
@@ -31,6 +31,53 @@ function toYearsLabel(r) {
 	if (Number.isFinite(born) && Number.isFinite(died)) return `${born}–${died}`
 	return ''
 }
+
+function normalizeGraveState(value) {
+	const s = String(value || '').trim().toLowerCase()
+	if (!s) return ''
+	if (['occupied', 'ocupada', 'ocupado', 'buried', 'inhumada', 'inhumado', 'vendida', 'vendido'].includes(s)) return 'occupied'
+	if (['confirmed', 'reserved', 'reservada', 'reservado', 'approved', 'aprobada', 'aprobado', 'pagado', 'paid'].includes(s)) return 'reserved'
+	if (['pending', 'pendiente', 'por aprobar'].includes(s)) return 'pending'
+	if (['maintenance', 'mantenimiento', 'disabled', 'inactiva', 'inactivo', 'bloqueada', 'bloqueado'].includes(s)) return 'maintenance'
+	if (['available', 'disponible', 'libre', 'free'].includes(s)) return 'available'
+	return 'available'
+}
+
+function markerState(m) {
+	const r = m?.record || {}
+	const values = [
+		m?.state,
+		m?.status,
+		r?.state,
+		r?.status,
+		r?.grave_status,
+		r?.active_reservation_status,
+		r?.reservation_status,
+		r?.payment_status,
+		r?.availability_status,
+	]
+	if (r?.has_burial || values.some((v) => normalizeGraveState(v) === 'occupied')) return 'occupied'
+	if (values.some((v) => normalizeGraveState(v) === 'pending')) return 'pending'
+	if (values.some((v) => normalizeGraveState(v) === 'reserved')) return 'reserved'
+	if (r?.is_enabled === false || values.some((v) => normalizeGraveState(v) === 'maintenance')) return 'maintenance'
+	return 'available'
+}
+
+function stateLabel(state) {
+	if (state === 'occupied') return 'Ocupada'
+	if (state === 'reserved') return 'Reservada'
+	if (state === 'pending') return 'Pendiente'
+	if (state === 'maintenance') return 'Mantenimiento'
+	return 'Disponible'
+}
+
+const graveStateLegend = [
+	{ state: 'available', label: 'Disponible', color: '#22c55e' },
+	{ state: 'reserved', label: 'Reservada', color: '#f59e0b' },
+	{ state: 'occupied', label: 'Ocupada', color: '#475569' },
+	{ state: 'pending', label: 'Pendiente', color: '#38bdf8' },
+	{ state: 'maintenance', label: 'Mantenimiento', color: '#94a3b8' },
+]
 
 function stableSeedFromString(input) {
 	const s = String(input ?? '')
@@ -48,7 +95,7 @@ function stable01(seed) {
 	return x / 2 ** 32
 }
 
-export function Cemetery3DView({ markers = [], selected = null, onSelect, variant = 'card' }) {
+export function Cemetery3DView({ markers = [], sections = [], selected = null, onSelect, variant = 'card' }) {
 	const canvasRef = useRef(null)
 	const rootRef = useRef(null)
 	const rafRef = useRef(0)
@@ -72,8 +119,15 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 			sector: r?.sector_name ? String(r.sector_name) : '',
 			row: r?.row_number != null ? String(r.row_number) : '',
 			col: r?.col_number != null ? String(r.col_number) : '',
+			status: stateLabel(markerState(picked)),
 		}
 	}, [picked])
+
+	const sectionSummary = useMemo(() => {
+		const count = Array.isArray(sections) && sections.length ? sections.length : 1
+		const first = Array.isArray(sections) && sections.length ? sections[0]?.name : 'Sector general'
+		return { count, first: first || 'Sector general' }
+	}, [sections])
 
 	useEffect(() => {
 		setPicked((prev) => {
@@ -205,10 +259,10 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 			const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 250)
 			let theta = 0
 			let phi = 0.35
-			let radius = isImmersive ? 22 : 26
+			let radius = isImmersive ? 34 : 38
 			let targetTheta = 0
 			let targetPhi = 0.35
-			let targetRadius = isImmersive ? 22 : 26
+			let targetRadius = isImmersive ? 34 : 38
 			let isRunning = false
 			let needsRender = true
 
@@ -269,8 +323,28 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 			const metalMat = new THREE.MeshStandardMaterial({ color: metal, roughness: 0.65, metalness: 0.25 })
 			const shadowMat = new THREE.MeshStandardMaterial({ color: 0x000000, transparent: true, opacity: 0.12, roughness: 1.0, metalness: 0.0 })
 
+			function gravePalette(m) {
+				const state = markerState(m)
+				const accentHex = {
+					available: '#22c55e',
+					reserved: '#f59e0b',
+					occupied: '#475569',
+					pending: '#38bdf8',
+					maintenance: '#94a3b8',
+				}[state] || '#22c55e'
+				const accent = new THREE.Color(accentHex)
+				const plot = state === 'available' ? stoneDark.clone().lerp(accent, 0.36) : stoneDark.clone().lerp(accent, 0.72)
+				const soilColor = state === 'available' ? soil.clone().lerp(accent, 0.24) : soil.clone().lerp(accent, 0.68)
+				const head = state === 'occupied' || state === 'maintenance' ? stone.clone().lerp(accent, 0.72) : stone.clone().lerp(accent, 0.5)
+				return { state, accent, plot, soil: soilColor, head }
+			}
+
+			function statusMaterial(color, roughness = 0.72) {
+				return new THREE.MeshStandardMaterial({ color, roughness, metalness: 0.02 })
+			}
+
 			const seg = isImmersive ? 56 : 120
-			const groundGeo = new THREE.PlaneGeometry(74, 74, seg, seg)
+			const groundGeo = new THREE.PlaneGeometry(104, 104, seg, seg)
 			// Relieve suave para que no se vea “plano”
 			try {
 				const pos = groundGeo.attributes.position
@@ -295,15 +369,15 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 			// Senderos con volumen + bordes
 			function addPath(w, d, x, z) {
 				const body = new THREE.Mesh(new THREE.BoxGeometry(w, 0.06, d), pathMat)
-				body.position.set(x, 0.035, z)
+				body.position.set(x, 0.07, z)
 				body.receiveShadow = true
 				scene.add(body)
 				const edgeL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.045, d + 0.12), pathEdgeMat)
-				edgeL.position.set(x - w / 2 - 0.06, 0.028, z)
+				edgeL.position.set(x - w / 2 - 0.06, 0.075, z)
 				edgeL.receiveShadow = true
 				scene.add(edgeL)
 				const edgeR = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.045, d + 0.12), pathEdgeMat)
-				edgeR.position.set(x + w / 2 + 0.06, 0.028, z)
+				edgeR.position.set(x + w / 2 + 0.06, 0.075, z)
 				edgeR.receiveShadow = true
 				scene.add(edgeR)
 				return { body, edgeL, edgeR }
@@ -311,46 +385,300 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 
 			// Layout tipo cementerio “real”: camino principal desde el portón hacia una capilla al fondo,
 			// más un cruce/placita central.
-			const bx = 19.5
-			const bz = 14.5
-			const mainPathW = 4.2
+			const bx = 29
+			const bz = 21
+			const mainPathW = 3.2
 			const mainPathD = bz * 2 - 4.2
 			const mainPath = addPath(mainPathW, mainPathD, 0, 0.6)
-			const crossPath = addPath(18.5, 3.6, 0, -2.8)
-			const plaza = new THREE.Mesh(new THREE.BoxGeometry(10.5, 0.055, 6.8), pathMat)
-			plaza.position.set(0, 0.034, -6.8)
+			const crossPath = addPath(24, 2.4, 0, -4.4)
+			addPath(22, 1.35, -15.2, -14.8)
+			addPath(22, 1.35, 15.2, -14.8)
+			addPath(22, 1.35, -15.2, 5.4)
+			addPath(22, 1.35, 15.2, 5.4)
+			addPath(1.35, 27.5, -15.2, -2.4)
+			addPath(1.35, 27.5, 15.2, -2.4)
+			addPath(1.1, 22, -25.7, -3.2)
+			addPath(1.1, 22, 25.7, -3.2)
+			const plaza = new THREE.Mesh(new THREE.BoxGeometry(8.8, 0.055, 5.4), pathMat)
+			plaza.position.set(0, 0.068, -10.8)
 			plaza.receiveShadow = true
 			scene.add(plaza)
+
+			function addDirectionMarker() {
+				const group = new THREE.Group()
+				const arrowMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#f8fafc'), roughness: 0.72, metalness: 0.02 })
+				const accentMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#16a34a'), roughness: 0.6, metalness: 0.02 })
+				const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.1, 10), metalMat)
+				post.position.set(0, 0.58, 0)
+				const board = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.48, 0.12), arrowMat)
+				board.position.set(0, 1.12, 0)
+				const tip = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.72, 3), accentMat)
+				tip.rotation.z = -Math.PI / 2
+				tip.position.set(1.28, 1.12, 0)
+				group.add(post, board, tip)
+				group.position.set(-4.9, 0, 17.7)
+				group.rotation.y = -Math.PI / 2
+				scene.add(group)
+			}
+
+			addDirectionMarker()
 
 			const gravestones = []
 			const clickables = []
 			const graveById = new Map()
 
+			function keepAwayFromPaths(x, z, seed) {
+				const mainHalf = mainPathW / 2
+				if (Math.abs(x) < mainHalf + 2.6) {
+					const side = stable01((seed ?? 0) ^ 0x27d4eb2d) < 0.5 ? -1 : 1
+					x = side * (mainHalf + 4.2)
+				}
+				const crossZ = -4.4
+				if (Math.abs(z - crossZ) < 2.4 && Math.abs(x) < 25.5) {
+					const dir = stable01((seed ?? 0) ^ 0x165667b1) < 0.5 ? -1 : 1
+					z = crossZ + dir * 3.8
+				}
+				;[-15.2, 15.2, -25.7, 25.7].forEach((pathX) => {
+					if (Math.abs(x - pathX) < 1.45) x += x < pathX ? -1.55 : 1.55
+				})
+				;[-14.8, 5.4].forEach((pathZ) => {
+					if (Math.abs(z - pathZ) < 1.25) z += z < pathZ ? -1.45 : 1.45
+				})
+				return { x, z }
+			}
+
 			function markerToXZ(m, seed) {
+				const wx = Number(m?.worldX)
+				const wz = Number(m?.worldZ)
+				if (m?.worldX != null && m?.worldZ != null && Number.isFinite(wx) && Number.isFinite(wz)) {
+					const pos = keepAwayFromPaths(wx, wz, seed)
+					return {
+						x: clamp(pos.x, -bx + 2.5, bx - 2.5),
+						z: clamp(pos.z, -bz + 2.5, bz - 3.8),
+					}
+				}
+
 				// markers vienen en % (0..100). Pasamos a un área cómoda.
 				const mx = Number.isFinite(m?.x) ? Number(m.x) : 50
 				const my = Number.isFinite(m?.y) ? Number(m.y) : 50
 				const nx = (clamp(mx, 0, 100) - 50) / 50
 				const nz = (clamp(my, 0, 100) - 50) / 50
-				let x = nx * 14
-				let z = nz * 10
+				let x = nx * 24
+				let z = nz * 16
 
-				// Evitar que las tumbas queden sobre el camino principal/cruce.
-				const mainHalf = mainPathW / 2
-				if (Math.abs(x) < mainHalf + 0.9) {
-					const side = stable01((seed ?? 0) ^ 0x27d4eb2d) < 0.5 ? -1 : 1
-					x = side * (mainHalf + 2.6)
-				}
-				const crossZ = -2.8
-				if (Math.abs(z - crossZ) < 2.3 && Math.abs(x) < 10.2) {
-					const dir = stable01((seed ?? 0) ^ 0x165667b1) < 0.5 ? -1 : 1
-					z = crossZ + dir * 3.2
-				}
+				const pos = keepAwayFromPaths(x, z, seed)
+				x = pos.x
+				z = pos.z
 
 				// Mantener dentro del perímetro
 				x = clamp(x, -bx + 2.5, bx - 2.5)
-				z = clamp(z, -bz + 2.5, bz - 5.2)
+				z = clamp(z, -bz + 2.5, bz - 3.8)
 				return { x, z }
+			}
+
+			function addSectionGuides() {
+				if (!Array.isArray(markers) || markers.length === 0) return
+				const bySection = new Map()
+				markers.forEach((m, idx) => {
+					const seed = stableSeedFromString(String(m?.id || idx))
+					const pos = markerToXZ(m, seed)
+					const key = String(m?.sectionId || m?.record?.sector_id || m?.record?.sector_name || 'general')
+					const name = String(m?.sectionName || m?.record?.sector_name || 'Sector general')
+					if (!bySection.has(key)) {
+						bySection.set(key, {
+							key,
+							name,
+							count: 0,
+							minX: Infinity,
+							maxX: -Infinity,
+							minZ: Infinity,
+							maxZ: -Infinity,
+							centerX: Number.isFinite(Number(m?.sectionCenterX)) ? Number(m.sectionCenterX) : null,
+							centerZ: Number.isFinite(Number(m?.sectionCenterZ)) ? Number(m.sectionCenterZ) : null,
+							width: Number.isFinite(Number(m?.sectionWidth)) ? Number(m.sectionWidth) : null,
+							depth: Number.isFinite(Number(m?.sectionDepth)) ? Number(m.sectionDepth) : null,
+						})
+					}
+					const s = bySection.get(key)
+					s.count += 1
+					s.minX = Math.min(s.minX, pos.x)
+					s.maxX = Math.max(s.maxX, pos.x)
+					s.minZ = Math.min(s.minZ, pos.z)
+					s.maxZ = Math.max(s.maxZ, pos.z)
+					if (s.centerX == null && Number.isFinite(Number(m?.sectionCenterX))) s.centerX = Number(m.sectionCenterX)
+					if (s.centerZ == null && Number.isFinite(Number(m?.sectionCenterZ))) s.centerZ = Number(m.sectionCenterZ)
+					if (s.width == null && Number.isFinite(Number(m?.sectionWidth))) s.width = Number(m.sectionWidth)
+					if (s.depth == null && Number.isFinite(Number(m?.sectionDepth))) s.depth = Number(m.sectionDepth)
+				})
+
+				const sectionValues = Array.from(bySection.values())
+				const centers = sectionValues.filter((s) => s.centerX != null && s.centerZ != null)
+				if (centers.length > 1) {
+					const minX = Math.min(...centers.map((s) => s.centerX - (s.width || 6) / 2))
+					const maxX = Math.max(...centers.map((s) => s.centerX + (s.width || 6) / 2))
+					const minZ = Math.min(...centers.map((s) => s.centerZ - (s.depth || 6) / 2))
+					const maxZ = Math.max(...centers.map((s) => s.centerZ + (s.depth || 6) / 2))
+					addPath(2.4, Math.max(6, maxZ - minZ + 5.2), 0, (minZ + maxZ) / 2)
+					const rowZs = Array.from(new Set(centers.map((s) => Math.round(s.centerZ * 10) / 10))).sort((a, b) => a - b)
+					rowZs.forEach((z) => {
+						addPath(Math.max(8, maxX - minX + 4.6), 1.55, (minX + maxX) / 2, z)
+					})
+				}
+
+				const guideGroup = new THREE.Group()
+				const sectionBaseMat = new THREE.MeshStandardMaterial({
+					color: grassA.clone().offsetHSL(0, 0.03, 0.08),
+					transparent: true,
+					opacity: isImmersive ? 0.22 : 0.34,
+					roughness: 0.98,
+					metalness: 0,
+				})
+				const borderMat = new THREE.LineBasicMaterial({
+					color: grassA.clone().offsetHSL(0, 0.12, 0.08),
+					transparent: true,
+					opacity: isImmersive ? 0.55 : 0.72,
+				})
+
+				function makeLabelTexture(text, count) {
+					const cnv = document.createElement('canvas')
+					cnv.width = 512
+					cnv.height = 128
+					const ctx = cnv.getContext('2d')
+					ctx.clearRect(0, 0, cnv.width, cnv.height)
+					ctx.fillStyle = 'rgba(5, 46, 31, 0.76)'
+					ctx.strokeStyle = 'rgba(255, 255, 255, 0.24)'
+					ctx.lineWidth = 3
+					roundRect(ctx, 16, 18, 480, 92, 18)
+					ctx.fill()
+					ctx.stroke()
+					ctx.fillStyle = '#ecfdf5'
+					ctx.font = '700 28px Arial'
+					ctx.fillText(text.slice(0, 26), 38, 58)
+					ctx.fillStyle = 'rgba(236,253,245,0.72)'
+					ctx.font = '700 18px Arial'
+					ctx.fillText(`${count} tumbas`, 38, 88)
+					const tex = new THREE.CanvasTexture(cnv)
+					tex.colorSpace = THREE.SRGBColorSpace
+					tex.needsUpdate = true
+					return tex
+				}
+
+				function roundRect(ctx, x, y, w, h, r) {
+					ctx.beginPath()
+					ctx.moveTo(x + r, y)
+					ctx.lineTo(x + w - r, y)
+					ctx.quadraticCurveTo(x + w, y, x + w, y + r)
+					ctx.lineTo(x + w, y + h - r)
+					ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h)
+					ctx.lineTo(x + r, y + h)
+					ctx.quadraticCurveTo(x, y + h, x, y + h - r)
+					ctx.lineTo(x, y + r)
+					ctx.quadraticCurveTo(x, y, x + r, y)
+					ctx.closePath()
+				}
+
+				sectionValues.forEach((s) => {
+					if (!Number.isFinite(s.minX) || !Number.isFinite(s.minZ)) return
+					const pad = markers.length >= 80 ? 1.6 : 2.2
+					const w = s.width != null ? Math.max(5.8, s.width) : Math.max(5.8, s.maxX - s.minX + pad * 2)
+					const d = s.depth != null ? Math.max(5.4, s.depth) : Math.max(5.4, s.maxZ - s.minZ + pad * 2)
+					const cx = s.centerX != null ? s.centerX : clamp((s.minX + s.maxX) / 2, -bx + w / 2 + 0.5, bx - w / 2 - 0.5)
+					const cz = s.centerZ != null ? s.centerZ : clamp((s.minZ + s.maxZ) / 2, -bz + d / 2 + 0.5, bz - d / 2 - 4.8)
+
+					const base = new THREE.Mesh(new THREE.BoxGeometry(w, 0.035, d), sectionBaseMat)
+					base.position.set(cx, 0.03, cz)
+					base.receiveShadow = true
+					guideGroup.add(base)
+
+					const edgeGeo = new THREE.BufferGeometry().setFromPoints([
+						new THREE.Vector3(cx - w / 2, 0.095, cz - d / 2),
+						new THREE.Vector3(cx + w / 2, 0.095, cz - d / 2),
+						new THREE.Vector3(cx + w / 2, 0.095, cz + d / 2),
+						new THREE.Vector3(cx - w / 2, 0.095, cz + d / 2),
+						new THREE.Vector3(cx - w / 2, 0.095, cz - d / 2),
+					])
+					guideGroup.add(new THREE.Line(edgeGeo, borderMat))
+
+					if (bySection.size <= 12) {
+						const spriteMat = new THREE.SpriteMaterial({
+							map: makeLabelTexture(s.name, s.count),
+							transparent: true,
+							depthWrite: false,
+						})
+						const label = new THREE.Sprite(spriteMat)
+						label.position.set(cx, 1.25, cz - d / 2 + 0.55)
+						label.scale.set(3.6, 0.9, 1)
+						guideGroup.add(label)
+					}
+				})
+
+				scene.add(guideGroup)
+			}
+
+			function makeInstancedGraves() {
+				const dummy = new THREE.Object3D()
+				const plotGeo = new THREE.BoxGeometry(1, 1, 1)
+				const soilGeo = new THREE.BoxGeometry(1, 1, 1)
+				const headGeo = new THREE.BoxGeometry(1, 1, 1)
+				const count = markers.length
+				const plotInstMat = stoneDarkMat.clone()
+				const soilInstMat = soilMat.clone()
+				const headInstMat = stoneMat.clone()
+				plotInstMat.vertexColors = true
+				soilInstMat.vertexColors = true
+				headInstMat.vertexColors = true
+				const plotMesh = new THREE.InstancedMesh(plotGeo, plotInstMat, count)
+				const soilMesh = new THREE.InstancedMesh(soilGeo, soilInstMat, count)
+				const headMesh = new THREE.InstancedMesh(headGeo, headInstMat, count)
+				plotMesh.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+				soilMesh.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+				headMesh.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+				plotMesh.userData.instanceMarkers = markers
+				soilMesh.userData.instanceMarkers = markers
+				headMesh.userData.instanceMarkers = markers
+				plotMesh.receiveShadow = true
+				soilMesh.receiveShadow = true
+				headMesh.castShadow = !isImmersive
+
+				markers.forEach((m, idx) => {
+					const seed = stableSeedFromString(String(m?.id || idx))
+					const { x, z } = markerToXZ(m, seed)
+					const hasGridPosition = m?.worldX != null && m?.worldZ != null && Number.isFinite(Number(m.worldX)) && Number.isFinite(Number(m.worldZ))
+					const rot = hasGridPosition ? 0 : (stable01(seed ^ 0x9e3779b9) - 0.5) * 0.08
+					const palette = gravePalette(m)
+
+					dummy.position.set(x, 0.08, z)
+					dummy.rotation.set(0, rot, 0)
+					dummy.scale.set(1.32, 0.12, 2.18)
+					dummy.updateMatrix()
+					plotMesh.setMatrixAt(idx, dummy.matrix)
+					plotMesh.setColorAt(idx, palette.plot)
+
+					dummy.position.set(x, 0.16, z - 0.05)
+					dummy.rotation.set(0, rot, 0)
+					dummy.scale.set(1.02, 0.09, 1.82)
+					dummy.updateMatrix()
+					soilMesh.setMatrixAt(idx, dummy.matrix)
+					soilMesh.setColorAt(idx, palette.soil)
+
+					dummy.position.set(x, 0.74, z - 1.04)
+					dummy.rotation.set(0, rot, 0)
+					dummy.scale.set(0.58, 1.02, 0.16)
+					dummy.updateMatrix()
+					headMesh.setMatrixAt(idx, dummy.matrix)
+					headMesh.setColorAt(idx, palette.head)
+
+					graveById.set(String(m?.id || ''), { position: { x, z } })
+				})
+
+				plotMesh.instanceMatrix.needsUpdate = true
+				soilMesh.instanceMatrix.needsUpdate = true
+				headMesh.instanceMatrix.needsUpdate = true
+				if (plotMesh.instanceColor) plotMesh.instanceColor.needsUpdate = true
+				if (soilMesh.instanceColor) soilMesh.instanceColor.needsUpdate = true
+				if (headMesh.instanceColor) headMesh.instanceColor.needsUpdate = true
+				clickables.push(plotMesh, soilMesh, headMesh)
+				scene.add(plotMesh, soilMesh, headMesh)
 			}
 
 			function makeGrave(m, idx) {
@@ -360,21 +688,27 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 				const seed = stableSeedFromString(String(m?.id || idx))
 				const style = seed % 5
 
-				// Acento: solo en rango verde/menta para mantener el look “claro y vivo”.
-				const greenHue = 0.33 + stable01(seed) * 0.12 // ~ 120º a 163º
-				const accent = new THREE.Color().setHSL(greenHue % 1, 0.42, 0.62)
-				const accentMat = new THREE.MeshStandardMaterial({ color: accent, roughness: 0.62, metalness: 0.02 })
+				const palette = gravePalette(m)
+				const accentMat = statusMaterial(palette.accent, 0.62)
+				const plotMat = statusMaterial(palette.plot, 0.86)
+				const soilStateMat = statusMaterial(palette.soil, 0.96)
+				const headStateMat = statusMaterial(palette.head, 0.84)
 
 				// Base del lote (concreto) + tierra
-				const plot = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.10, 3.15), stoneDarkMat)
+				const plot = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.10, 3.15), plotMat)
 				plot.position.y = 0.05
 				plot.receiveShadow = true
 				g.add(plot)
 
-				const soilPatch = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.08, 2.75), soilMat)
+				const soilPatch = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.08, 2.75), soilStateMat)
 				soilPatch.position.set(0, 0.09, -0.05)
 				soilPatch.receiveShadow = true
 				g.add(soilPatch)
+
+				const statusStrip = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.08, 0.24), accentMat)
+				statusStrip.position.set(0, 0.19, 1.26)
+				statusStrip.castShadow = true
+				g.add(statusStrip)
 
 				// Sombra suave (fake) para “asentar” la tumba (sin oscurecer mucho)
 				const contact = new THREE.Mesh(new THREE.CircleGeometry(1.1, 28), shadowMat)
@@ -399,11 +733,11 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 
 				if (style === 0) {
 					// Cruz
-					const stem = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.25, 0.16), stoneMat)
+					const stem = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.25, 0.16), headStateMat)
 					stem.position.set(0, 0.78, -1.2)
 					stem.castShadow = true
 					g.add(stem)
-					const arm = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.18, 0.16), stoneDarkMat)
+					const arm = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.18, 0.16), plotMat)
 					arm.position.set(0, 1.17, -1.2)
 					arm.castShadow = true
 					g.add(arm)
@@ -413,11 +747,11 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 					g.add(plate)
 				} else if (style === 1) {
 					// Lápida redondeada con base
-					const base = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.22, 0.52), stoneDarkMat)
+					const base = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.22, 0.52), plotMat)
 					base.position.set(0, 0.22, -1.18)
 					base.castShadow = true
 					g.add(base)
-					const head = new THREE.Mesh(makeHeadstoneRounded(0.92, 1.35, 0.18), stoneMat)
+					const head = new THREE.Mesh(makeHeadstoneRounded(0.92, 1.35, 0.18), headStateMat)
 					head.position.set(0, 0.32, -1.2)
 					head.castShadow = true
 					g.add(head)
@@ -433,7 +767,7 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 					pts.push(new THREE.Vector2(0.28, 0.76))
 					pts.push(new THREE.Vector2(0.14, 1.55))
 					pts.push(new THREE.Vector2(0.0, 1.8))
-					const obel = new THREE.Mesh(new THREE.LatheGeometry(pts, 10), stoneMat)
+					const obel = new THREE.Mesh(new THREE.LatheGeometry(pts, 10), headStateMat)
 					obel.rotation.y = Math.PI / 8
 					obel.position.set(0, 0.18, -1.22)
 					obel.castShadow = true
@@ -445,11 +779,11 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 					g.add(ring)
 				} else if (style === 3) {
 					// Losa horizontal + cabecera
-					const slab = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.16, 1.75), stoneMat)
+					const slab = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.16, 1.75), headStateMat)
 					slab.position.set(0, 0.18, -0.75)
 					slab.castShadow = true
 					g.add(slab)
-					const head = new THREE.Mesh(makeHeadstoneRounded(0.82, 0.98, 0.16), stoneDarkMat)
+					const head = new THREE.Mesh(makeHeadstoneRounded(0.82, 0.98, 0.16), plotMat)
 					head.position.set(0, 0.24, -1.34)
 					head.castShadow = true
 					g.add(head)
@@ -459,15 +793,15 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 					g.add(badge)
 				} else {
 					// Doble lápida (familia)
-					const base = new THREE.Mesh(new THREE.BoxGeometry(1.20, 0.18, 0.62), stoneDarkMat)
+					const base = new THREE.Mesh(new THREE.BoxGeometry(1.20, 0.18, 0.62), plotMat)
 					base.position.set(0, 0.20, -1.18)
 					base.castShadow = true
 					g.add(base)
-					const left = new THREE.Mesh(makeHeadstoneRounded(0.52, 1.15, 0.14), stoneMat)
+					const left = new THREE.Mesh(makeHeadstoneRounded(0.52, 1.15, 0.14), headStateMat)
 					left.position.set(-0.30, 0.30, -1.18)
 					left.castShadow = true
 					g.add(left)
-					const right = new THREE.Mesh(makeHeadstoneRounded(0.52, 1.15, 0.14), stoneMat)
+					const right = new THREE.Mesh(makeHeadstoneRounded(0.52, 1.15, 0.14), headStateMat)
 					right.position.set(0.30, 0.30, -1.18)
 					right.castShadow = true
 					g.add(right)
@@ -479,8 +813,9 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 
 				const { x, z } = markerToXZ(m, seed)
 				g.position.set(x, 0, z)
-				g.rotation.y = (stable01(seed ^ 0x9e3779b9) - 0.5) * 0.12
-				g.rotation.z = (stable01(seed ^ 0x85ebca6b) - 0.5) * 0.02
+				const hasGridPosition = m?.worldX != null && m?.worldZ != null && Number.isFinite(Number(m.worldX)) && Number.isFinite(Number(m.worldZ))
+				g.rotation.y = hasGridPosition ? 0 : (stable01(seed ^ 0x9e3779b9) - 0.5) * 0.12
+				g.rotation.z = hasGridPosition ? 0 : (stable01(seed ^ 0x85ebca6b) - 0.5) * 0.02
 
 				graveById.set(String(m?.id || ''), g)
 
@@ -496,7 +831,9 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 				scene.add(g)
 			}
 
-			markers.forEach((m, i) => makeGrave(m, i))
+			addSectionGuides()
+			if (markers.length >= 80) makeInstancedGraves()
+			else markers.forEach((m, i) => makeGrave(m, i))
 
 			// Muros perimetrales + portón de entrada (estilo low-poly como la referencia)
 			const walls = new THREE.Group()
@@ -657,6 +994,24 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 				positions.push([-bx - 1.7, -bz + t * bz * 2])
 				positions.push([bx + 1.7, -bz + t * bz * 2])
 			}
+			for (let i = 0; i < 12; i++) {
+				const t = i / 11
+				const x = -bx + 3.5 + t * (bx * 2 - 7)
+				if (Math.abs(x) > 3.8) {
+					positions.push([x, -bz - 1.6])
+					positions.push([x, bz + 1.6])
+				}
+			}
+			;[
+				[-4.4, 12.2],
+				[4.4, 12.2],
+				[-4.4, 6.4],
+				[4.4, 6.4],
+				[-11.2, -10.8],
+				[11.2, -10.8],
+				[-21.2, -2.4],
+				[21.2, -2.4],
+			].forEach((p) => positions.push(p))
 			positions.forEach(([x, z], i) => {
 				const s = 0.9 + stable01(i * 10007) * 0.35
 				const trunk = new THREE.Mesh(trunkGeo, trunkMat)
@@ -739,7 +1094,7 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 				requestRender()
 			}
 			function onWheel(e) {
-				targetRadius = clamp(targetRadius + e.deltaY * 0.03, 8, isImmersive ? 48 : 52)
+				targetRadius = clamp(targetRadius + e.deltaY * 0.03, 10, isImmersive ? 68 : 74)
 				requestRender()
 			}
 
@@ -747,7 +1102,7 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 				reset: () => {
 					targetTheta = 0
 					targetPhi = 0.35
-					targetRadius = isImmersive ? 22 : 26
+					targetRadius = isImmersive ? 34 : 38
 					requestRender()
 				},
 				toggleFog: () => {
@@ -773,6 +1128,17 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 				raycaster.setFromCamera(mouse, camera)
 				const hits = raycaster.intersectObjects(clickables)
 				if (hits.length > 0) {
+					const instanceMarkers = hits[0].object?.userData?.instanceMarkers
+					if (instanceMarkers && hits[0].instanceId != null) {
+						const m = instanceMarkers[hits[0].instanceId]
+						if (m) {
+							pickedKeyRef.current = String(m?.id || '')
+							setPicked(m)
+							onSelect?.(m.record)
+							requestRender()
+							return
+						}
+					}
 					const g = hits[0].object?.userData?.parent
 					const m = g?.userData?.marker
 					if (m) {
@@ -874,16 +1240,14 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 						if (typeof mat.dispose === 'function') mat.dispose()
 					}
 					scene.traverse((o) => {
-						if (o.isMesh) {
-							const geo = o.geometry
-							if (geo && typeof geo.dispose === 'function' && !disposedGeos.has(geo)) {
-								disposedGeos.add(geo)
-								geo.dispose()
-							}
-							const mat = o.material
-							if (Array.isArray(mat)) mat.forEach(disposeMaterial)
-							else disposeMaterial(mat)
+						const geo = o.geometry
+						if (geo && typeof geo.dispose === 'function' && !disposedGeos.has(geo)) {
+							disposedGeos.add(geo)
+							geo.dispose()
 						}
+						const mat = o.material
+						if (Array.isArray(mat)) mat.forEach(disposeMaterial)
+						else disposeMaterial(mat)
 					})
 				} catch {
 					// ignore
@@ -911,7 +1275,7 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 			}
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [markers, isImmersive])
+	}, [markers, sections, isImmersive])
 
 	function onResetCam() {
 		try {
@@ -944,7 +1308,7 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 									<span className="bg-[var(--btn-gradient)] bg-clip-text text-transparent">Cementerio</span>
 								</div>
 								<div className="mt-1 text-[color:var(--text-h)]">
-									<span className="font-semibold">Campo Santo</span> · 3D
+									<span className="font-semibold">Campo Santo</span> · {markers.length} tumbas · {sectionSummary.count} secciones
 								</div>
 							</div>
 
@@ -954,6 +1318,17 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 								Scroll · Zoom
 								<br />
 								Clic · Explorar
+							</div>
+						</div>
+
+						<div className="absolute left-4 top-24 max-w-[calc(100%-2rem)] rounded-md border border-[color:var(--border)] bg-black/35 px-3 py-2 backdrop-blur">
+							<div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-medium text-[color:var(--text-h)]">
+								{graveStateLegend.map((item) => (
+									<span key={item.state} className="inline-flex items-center gap-1.5">
+										<span className="h-2.5 w-2.5 rounded-full border border-white/40" style={{ backgroundColor: item.color }} />
+										{item.label}
+									</span>
+								))}
 							</div>
 						</div>
 
@@ -992,6 +1367,9 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 										{pickedLabel.row ? ` · Fila ${pickedLabel.row}` : ''}
 										{pickedLabel.col ? ` · Col ${pickedLabel.col}` : ''}
 									</div>
+									<div className="mt-2 inline-flex rounded-full border border-white/20 px-2 py-1 text-[11px] font-semibold text-[color:var(--text-h)]">
+										Estado: {pickedLabel.status}
+									</div>
 								</div>
 							</div>
 						) : null}
@@ -1011,7 +1389,7 @@ export function Cemetery3DView({ markers = [], selected = null, onSelect, varian
 				<div>
 					<div className="ui-kicker">Mapa</div>
 					<div className="mt-0.5 text-sm font-semibold text-[color:var(--text-h)]">Vista 3D (clara)</div>
-					<div className="mt-1 text-xs text-[color:var(--text)]">Arrastra para rotar · Scroll para zoom · Clic en una tumba para ver el difunto.</div>
+					<div className="mt-1 text-xs text-[color:var(--text)]">Arrastra para rotar · Scroll para zoom · {sectionSummary.count} secciones · {sectionSummary.first}.</div>
 					{uiError ? <div className="mt-1 text-xs text-red-600">{uiError}</div> : null}
 				</div>
 

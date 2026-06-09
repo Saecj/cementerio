@@ -6,7 +6,7 @@ import { MapView } from '../MapView'
 describe('MapView', () => {
 	test('renderiza mensaje cuando no hay selección', () => {
 		render(<MapView selected={null} markers={[]} onSelect={() => {}} />)
-		expect(screen.getByText(/Mapa del cementerio/i)).toBeInTheDocument()
+		expect(screen.getByText(/Ubicación de tus difuntos/i)).toBeInTheDocument()
 		expect(screen.getByText(/Selecciona un difunto/i)).toBeInTheDocument()
 	})
 

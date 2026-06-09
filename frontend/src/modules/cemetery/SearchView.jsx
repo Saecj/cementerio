@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../lib/api'
+import { getLayoutPosition, makeStableSeed, stable01 } from '../client/mapUtils'
 
 function prettyGraveStatus(status) {
 	if (!status) return '—'
@@ -87,27 +88,10 @@ export function SearchView({ selectedKey, onSelect, onGoToMap, searchSeed }) {
 		})
 	}, [items, q])
 
-	function makeStableSeed(input) {
-		const s = String(input ?? '')
-		let h = 2166136261
-		for (let i = 0; i < s.length; i++) {
-			h ^= s.charCodeAt(i)
-			h = Math.imul(h, 16777619)
-		}
-		return h >>> 0
-	}
-
-	function stable01(seed) {
-		let x = seed >>> 0
-		x = (Math.imul(1664525, x) + 1013904223) >>> 0
-		return x / 2 ** 32
-	}
-
 	function pseudoMapCoords(it) {
 		const seed = makeStableSeed(it?.id ?? it?.reservation_code ?? it?.grave_code ?? it?.deceased_full_name ?? '')
-		const x = 10 + stable01(seed) * 80
-		const y = 18 + stable01(seed ^ 0x9e3779b9) * 70
-		return { x: Math.round(x), y: Math.round(y) }
+		const pos = getLayoutPosition(it, [], seed)
+		return { x: Math.round(pos.x || 10 + stable01(seed) * 80), y: Math.round(pos.y || 18 + stable01(seed ^ 0x9e3779b9) * 70) }
 	}
 
 	function onSearch(e) {

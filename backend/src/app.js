@@ -11,7 +11,7 @@ const { buildCemeteryRouter } = require('./modules/cemetery/cemetery.routes');
 function createApp() {
 	const app = express();
 
-	const appOrigin = process.env.APP_ORIGIN || 'http://localhost:5173';
+	const appOrigin = process.env.APP_ORIGIN || 'http://localhost:5173'; // Modificar
 	app.set('trust proxy', 1);
 
 	app.use(

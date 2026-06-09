@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../lib/api'
 import graveCardImg from '../../assets/tumba_disponible.webp'
-import mausoleoImg from '../../assets/mausoleo_gotico.webp'
+import mausoleoImg from '../../assets/imgCementerio.png'
 import { Panel } from '../layout/Panel'
 import { Cemetery3DView } from '../client/Cemetery3DView'
 
@@ -39,65 +39,186 @@ function starsFor(value) {
 function FeaturedCemeteriesPanel({ branches, loading, error }) {
 	const list = Array.isArray(branches) ? branches : []
 	return (
-		<div className="ui-card rounded-md p-4 text-left">
-			<div className="flex items-center justify-between gap-2">
-				<div>
-					<div className="text-sm font-semibold text-[color:var(--text-h)]">Sedes registradas</div>
-					<div className="mt-0.5 text-xs text-[color:var(--muted)]">Calificación (1–5) y comentarios por sede</div>
-				</div>
-				<div className="rounded-full border border-[color:var(--accent-border)] bg-[color:var(--accent-bg)] px-3 py-1 text-xs font-semibold text-[color:var(--text-h)]">
-					Encuesta
-				</div>
+		<div className="ui-card rounded-xl border border-[color:var(--border)] p-5 text-left shadow-sm">
+	{/* Header */}
+	<div className="flex items-center justify-between gap-3">
+		<div>
+			<h3 className="text-lg font-bold text-[color:var(--text-h)]">
+				Valoración de Sedes
+			</h3>
+			<p className="mt-1 text-sm text-[color:var(--muted)]">
+				Opiniones y satisfacción de los clientes
+			</p>
+		</div>
+
+		<div className="flex items-center gap-2">
+			<div className="rounded-full bg-[color:var(--accent-bg)] px-3 py-1 text-xs font-semibold text-[color:var(--text-h)]">
+				{list.length} sedes
 			</div>
 
-			{error ? <div className="mt-3 text-sm text-red-600">{error}</div> : null}
-			{loading ? <div className="mt-3 text-sm text-[color:var(--text)]">Cargando sedes…</div> : null}
-			{!loading && !error && list.length === 0 ? (
-				<div className="mt-3 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-2)] px-3 py-3 text-sm text-[color:var(--text)]">
-					No hay sedes registradas.
-				</div>
-			) : null}
-
-			{!loading && list.length > 0 ? (
-				<div className="mt-3 max-h-[320px] space-y-3 overflow-auto pr-1">
-					{list.map((b) => {
-						const avg = Number(b.avg_rating || 0)
-						const count = Number(b.reviews_count || 0)
-						const comments = Array.isArray(b.recent_comments) ? b.recent_comments : []
-						return (
-							<div key={b.id} className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-2)] p-3">
-								<div className="flex items-start justify-between gap-2">
-									<div className="text-sm font-semibold text-[color:var(--text-h)]">{b.name}</div>
-									<div className="text-right text-xs text-[color:var(--muted)]">{count} reseñas</div>
-								</div>
-								<div className="mt-1 text-xs text-[color:var(--text)]">
-									<span className="font-semibold text-[color:var(--text-h)]">Calificación:</span>{' '}
-									<span className="font-semibold text-[color:var(--text-h)]">{starsFor(avg)}</span>{' '}
-									<span className="text-[color:var(--muted)]">({avg ? avg.toFixed(2) : '0.00'} / 5)</span>
-								</div>
-
-								{comments.length > 0 ? (
-									<div className="mt-2 space-y-2">
-										<div className="text-[11px] font-semibold tracking-wide text-[color:var(--muted)]">COMENTARIOS RECIENTES</div>
-										{comments.slice(0, 2).map((c, idx) => (
-											<div key={idx} className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2 text-xs text-[color:var(--text)]">
-												<div className="flex items-center justify-between gap-2">
-													<div className="font-medium text-[color:var(--text-h)]">⭐ {c?.rating ?? '—'}</div>
-													<div className="text-[11px] text-[color:var(--muted)]">{String(c?.updated_at || '').slice(0, 10)}</div>
-												</div>
-												<div className="mt-1">{c?.comment}</div>
-											</div>
-										))}
-									</div>
-								) : (
-									<div className="mt-2 text-xs text-[color:var(--muted)]">Aún no hay comentarios para esta sede.</div>
-								)}
-							</div>
-						)
-					})}
-				</div>
-			) : null}
+			<div className="rounded-full border border-[color:var(--accent-border)] px-3 py-1 text-xs font-semibold text-[color:var(--text-h)]">
+				Encuesta
+			</div>
 		</div>
+	</div>
+
+	{/* Estados */}
+	{error && (
+		<div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+			{error}
+		</div>
+	)}
+
+	{loading && (
+		<div className="mt-4 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-2)] px-4 py-3 text-sm">
+			Cargando sedes...
+		</div>
+	)}
+
+	{!loading && !error && list.length === 0 && (
+		<div className="mt-4 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-2)] px-4 py-6 text-center text-sm text-[color:var(--muted)]">
+			No hay sedes registradas.
+		</div>
+	)}
+
+	{/* Cards */}
+	{!loading && list.length > 0 && (
+		<div className="mt-5 grid grid-cols-1 gap-4 max-h-[500px] overflow-auto pr-1 lg:grid-cols-2">
+			{list.map((b) => {
+				const avg = Number(b.avg_rating || 0)
+				const count = Number(b.reviews_count || 0)
+				const comments = Array.isArray(b.recent_comments)
+					? b.recent_comments
+					: []
+
+				const percentage = Math.min((avg / 5) * 100, 100)
+
+				const badgeClass =
+					avg >= 4.5
+						? "bg-green-500/10 text-green-600"
+						: avg >= 3.5
+						? "bg-yellow-500/10 text-yellow-600"
+						: "bg-red-500/10 text-red-600"
+
+				const badgeText =
+					avg >= 4.5
+						? "Excelente"
+						: avg >= 3.5
+						? "Bueno"
+						: "Mejorable"
+
+				return (
+					<div
+						key={b.id}
+						className="group rounded-xl border border-[color:var(--border)] bg-[color:var(--surface-2)] p-4 transition-all hover:-translate-y-1 hover:shadow-md"
+					>
+						{/* Top */}
+						<div className="flex items-start justify-between">
+							<div className="flex items-center gap-3">
+								<div className="flex h-11 w-11 items-center justify-center rounded-full bg-[color:var(--accent-bg)] text-lg">
+									🏢
+								</div>
+
+								<div>
+									<h4 className="font-semibold text-[color:var(--text-h)]">
+										{b.name}
+									</h4>
+
+									<p className="text-xs text-[color:var(--muted)]">
+										{count} reseñas
+									</p>
+								</div>
+							</div>
+
+							<div
+								className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${badgeClass}`}
+							>
+								{badgeText}
+							</div>
+						</div>
+
+						{/* Rating */}
+						<div className="mt-4 flex items-center gap-3">
+							<div className="text-3xl font-bold text-[color:var(--text-h)]">
+								{avg ? avg.toFixed(1) : "0.0"}
+							</div>
+
+							<div>
+								<div className="text-yellow-500">
+									{starsFor(avg)}
+								</div>
+
+								<div className="text-xs text-[color:var(--muted)]">
+									de 5 estrellas
+								</div>
+							</div>
+						</div>
+
+						{/* Progress */}
+						<div className="mt-3">
+							<div className="mb-1 flex justify-between text-xs">
+								<span className="text-[color:var(--muted)]">
+									Satisfacción
+								</span>
+
+								<span className="font-medium text-[color:var(--text-h)]">
+									{percentage.toFixed(0)}%
+								</span>
+							</div>
+
+							<div className="h-2 overflow-hidden rounded-full bg-[color:var(--surface)]">
+								<div
+									className="h-full rounded-full bg-yellow-500 transition-all"
+									style={{
+										width: `${percentage}%`,
+									}}
+								/>
+							</div>
+						</div>
+
+						{/* Comentarios */}
+						<div className="mt-4">
+							<div className="mb-2 text-[11px] font-semibold tracking-wider text-[color:var(--muted)]">
+								COMENTARIOS RECIENTES
+							</div>
+
+							{comments.length > 0 ? (
+								<div className="space-y-2">
+									{comments.slice(0, 2).map((c, idx) => (
+										<div
+											key={idx}
+											className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-3"
+										>
+											<div className="flex items-center justify-between">
+												<span className="font-medium text-sm">
+													⭐ {c?.rating ?? "—"}
+												</span>
+
+												<span className="text-[11px] text-[color:var(--muted)]">
+													{String(
+														c?.updated_at || ""
+													).slice(0, 10)}
+												</span>
+											</div>
+
+											<p className="mt-2 text-sm text-[color:var(--text)] line-clamp-3">
+												"{c?.comment}"
+											</p>
+										</div>
+									))}
+								</div>
+							) : (
+								<div className="rounded-lg border border-dashed border-[color:var(--border)] p-3 text-sm text-[color:var(--muted)]">
+									Aún no hay comentarios para esta sede.
+								</div>
+							)}
+						</div>
+					</div>
+				)
+			})}
+		</div>
+	)}
+</div>
 	)
 }
 
@@ -216,38 +337,71 @@ export function HomeView({
 	}, [mapGraves, selectedGraveId])
 
 	const home3dMarkers = useMemo(() => {
-		const src = Array.isArray(available) && available.length ? available : Array.isArray(mapGraves) ? mapGraves : []
-		const list = src.slice(0, 14)
+		const src = Array.isArray(mapGraves) && mapGraves.length ? mapGraves : Array.isArray(available) ? available : []
+		const list = src.slice(0, 240)
 		const rows = list.map((g) => Number(g?.row_number)).filter((n) => Number.isFinite(n))
 		const cols = list.map((g) => Number(g?.col_number)).filter((n) => Number.isFinite(n))
+		const rowMin = rows.length ? Math.min(...rows) : 1
 		const rowMax = rows.length ? Math.max(...rows) : 0
+		const colMin = cols.length ? Math.min(...cols) : 1
 		const colMax = cols.length ? Math.max(...cols) : 0
+		const sectors = Array.from(new Set(list.map((g) => String(g?.sector_id || g?.sector_name || 'general'))))
 
 		return list.map((g, i) => {
 			const code = String(g?.code || g?.grave_code || g?.id || i)
 			const id = `grave-${code}`
 			const seed = makeStableSeed(id)
+			const state = computeCellState(g)
+			const sectorKey = String(g?.sector_id || g?.sector_name || 'general')
+			const sectorIndex = Math.max(0, sectors.indexOf(sectorKey))
 
 			const r = Number(g?.row_number)
 			const c = Number(g?.col_number)
 			let x = 10 + stable01(seed) * 80
 			let y = 18 + stable01(seed ^ 0x9e3779b9) * 70
+			let worldX = null
+			let worldZ = null
 			if (Number.isFinite(r) && Number.isFinite(c) && rowMax > 1 && colMax > 1) {
-				x = 10 + ((c - 1) / (colMax - 1)) * 80
-				y = 18 + ((r - 1) / (rowMax - 1)) * 70
+				const colT = (c - colMin) / Math.max(1, colMax - colMin)
+				const rowT = (r - rowMin) / Math.max(1, rowMax - rowMin)
+				const side = sectorIndex % 2 === 0 ? -1 : 1
+				const lane = Math.floor(sectorIndex / 2)
+				const leftMin = -25.5 + lane * 1.2
+				const leftMax = -5.2 + lane * 1.2
+				const rightMin = 5.2 - lane * 1.2
+				const rightMax = 25.5 - lane * 1.2
+				worldX = side < 0 ? leftMin + colT * (leftMax - leftMin) : rightMin + colT * (rightMax - rightMin)
+				worldZ = -16.2 + rowT * 29.2
+				if (Math.abs(worldZ + 4.4) < 2.2) worldZ += worldZ < -4.4 ? -2.4 : 2.4
+				x = 50 + (worldX / 28) * 50
+				y = 50 + (worldZ / 18) * 50
 			}
 
 			const hue = Math.floor(stable01(seed ^ 0x7f4a7c15) * 140) // rango más cercano a verde
 			return {
 				id,
 				record: {
+					id: g?.id,
 					grave_code: g?.code || g?.grave_code || '',
 					sector_name: g?.sector_name || '',
 					row_number: g?.row_number,
 					col_number: g?.col_number,
 					branch_name: g?.branch_name || '',
-					status: g?.status || g?.grave_status || '',
+					status: state,
+					state,
+					grave_status: g?.grave_status || '',
+					active_reservation_status: g?.active_reservation_status || '',
+					reservation_status: g?.reservation_status || g?.active_reservation_status || '',
+					payment_status: g?.payment_status || '',
+					availability_status: g?.availability_status || '',
+					has_burial: !!g?.has_burial,
 				},
+				sectionId: g?.sector_id || g?.sector_name || 'general',
+				sectionName: g?.sector_name || 'Sector general',
+				state,
+				status: state,
+				worldX,
+				worldZ,
 				x,
 				y,
 				hue,
@@ -263,10 +417,19 @@ export function HomeView({
 
 	function computeCellState(g) {
 		if (!g) return 'maintenance'
-		if (g.has_burial || g.grave_status === 'occupied') return 'occupied'
-		if (g.active_reservation_status === 'confirmed' || g.grave_status === 'reserved') return 'confirmed'
-		if (g.active_reservation_status === 'pending') return 'pending'
-		if (g.grave_status === 'maintenance' || g.is_enabled === false) return 'maintenance'
+		const values = [
+			g.status,
+			g.state,
+			g.grave_status,
+			g.active_reservation_status,
+			g.reservation_status,
+			g.payment_status,
+			g.availability_status,
+		].map((v) => String(v || '').trim().toLowerCase())
+		if (g.has_burial || values.some((v) => ['occupied', 'ocupada', 'ocupado', 'buried', 'inhumada', 'inhumado'].includes(v))) return 'occupied'
+		if (values.some((v) => ['pending', 'pendiente', 'por aprobar'].includes(v))) return 'pending'
+		if (values.some((v) => ['confirmed', 'reserved', 'reservada', 'reservado', 'approved', 'aprobada', 'aprobado', 'pagado', 'paid'].includes(v))) return 'confirmed'
+		if (g.is_enabled === false || values.some((v) => ['maintenance', 'mantenimiento', 'disabled', 'inactiva', 'inactivo', 'bloqueada', 'bloqueado'].includes(v))) return 'maintenance'
 		return 'available'
 	}
 
@@ -822,7 +985,7 @@ export function HomeView({
 
 			{/* Mapa 3D inmersivo (Inicio) */}
 			<div className="-mx-3 sm:-mx-4 lg:-mx-6">
-				<Cemetery3DView markers={home3dMarkers} variant="immersive" />
+				<Cemetery3DView markers={home3dMarkers} sections={mapSectors} variant="immersive" />
 			</div>
 
 			{/* Camposantos destacados (separado de la cabecera) */}
@@ -904,26 +1067,26 @@ export function HomeView({
 							<div className="ui-title text-base font-semibold md:text-lg">Tumbas disponibles</div>
 							<div className="mt-1 text-xs text-[color:var(--muted)]">También puedes reservar desde el mapa por sector.</div>
 						</div>
-							<div className="flex items-center gap-2">
-								{Array.isArray(branches) && branches.length > 0 ? (
-									<select
-										value={activeBranchId}
-										onChange={(e) => setActiveBranchId(e.target.value)}
-										disabled={branchesLoading}
-										className="h-9 rounded-md border border-[color:var(--border)] bg-transparent px-3 text-xs text-[color:var(--text-h)] disabled:opacity-50"
-										aria-label="Sucursal"
-									>
-										{branches.map((b) => (
-											<option key={b.id} value={String(b.id)}>
-												{b.name}
-											</option>
-										))}
-									</select>
-								) : null}
-								<div className="ui-chip">{available.length} disponibles</div>
-							</div>
+						<div className="flex items-center gap-2">
+							{Array.isArray(branches) && branches.length > 0 ? (
+								<select
+									value={activeBranchId}
+									onChange={(e) => setActiveBranchId(e.target.value)}
+									disabled={branchesLoading}
+									className="h-9 rounded-md border border-[color:var(--border)] bg-transparent px-3 text-xs text-[color:var(--text-h)] disabled:opacity-50"
+									aria-label="Sucursal"
+								>
+									{branches.map((b) => (
+										<option key={b.id} value={String(b.id)}>
+											{b.name}
+										</option>
+									))}
+								</select>
+							) : null}
+							<div className="ui-chip">{available.length} disponibles</div>
+						</div>
 					</div>
-						{branchesError ? <div className="mt-2 text-xs text-red-600">{branchesError}</div> : null}
+					{branchesError ? <div className="mt-2 text-xs text-red-600">{branchesError}</div> : null}
 
 					{loading && <div className="mt-4 text-sm text-[color:var(--text)]">Cargando…</div>}
 					{!loading && available.length === 0 && (
@@ -935,48 +1098,61 @@ export function HomeView({
 					{!loading && available.length > 0 && (
 						<div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 							{available.map((g) => (
-								<div key={g.id} className="ui-card ui-card--grave group overflow-hidden">
-									<div className="relative">
-										<img
-											src={graveCardImg}
-											alt="Tumba disponible"
-											className="h-60 w-full object-cover opacity-90 transition duration-300 group-hover:opacity-100 md:h-64"
-											loading="lazy"
-										/>
-										<div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent" />
-									</div>
+								<div key={g.id} className="ui-card group flex flex-col gap-3 rounded-xl p-4 transition hover:border-[color:var(--accent-border)]">
 
-									<div className="p-3 md:p-4">
-										<div className="flex items-center justify-between gap-2">
-											<div className="text-xl font-semibold tracking-tight text-[color:var(--text-h)]">{g.code}</div>
-											<div className="ui-chip" style={{ padding: '5px 10px', fontSize: 12 }}>
-												{formatMoney(g.price_cents, 'PEN')}
+									{/* Ícono lápida + código + badge */}
+									<div className="flex items-start justify-between gap-2">
+										<div>
+											<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[color:var(--surface-2)]">
+												<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" className="text-[color:var(--muted)]" aria-hidden="true">
+													<path d="M12 3v5" />
+													<path d="M9.5 6h5" />
+													<rect x="5" y="8" width="14" height="13" rx="1" />
+													<path d="M5 14h14" />
+												</svg>
+											</div>
+											<div className="mt-2 text-lg font-semibold tracking-tight text-[color:var(--text-h)]">
+												{g.code}
 											</div>
 										</div>
-
-										<div className="mt-3 grid grid-cols-3 gap-2 text-[12px] text-[color:var(--text)]">
-											<div>
-												<div className="font-semibold tracking-wide text-[color:var(--muted)]">Sección</div>
-												<div className="mt-0.5 text-sm font-semibold text-[color:var(--text-h)]">{g.sector_name || '—'}</div>
-											</div>
-											<div>
-												<div className="font-semibold tracking-wide text-[color:var(--muted)]">Fila</div>
-												<div className="mt-0.5 text-sm font-semibold text-[color:var(--text-h)]">{g.row_number ?? '—'}</div>
-											</div>
-											<div>
-												<div className="font-semibold tracking-wide text-[color:var(--muted)]">Col</div>
-												<div className="mt-0.5 text-sm font-semibold text-[color:var(--text-h)]">{g.col_number ?? '—'}</div>
-											</div>
-										</div>
-
-										<button
-											type="button"
-											onClick={() => openReserveModal(g)}
-											className="mt-4 w-full rounded-lg bg-[color:var(--accent)] px-3 py-2.5 text-xs font-semibold text-[color:var(--on-accent)]"
-										>
-											{me ? 'Reservar' : 'Ver y reservar'}
-										</button>
+										<span className="mt-0.5 flex items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-2.5 py-0.5 text-[11px] font-medium text-green-700">
+											<span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+											Disponible
+										</span>
 									</div>
+
+									<hr className="border-t border-[color:var(--border)]" />
+
+									{/* Precio */}
+									<div className="text-2xl font-semibold tracking-tight text-[color:var(--text-h)]">
+										{formatMoney(g.price_cents, 'PEN')}
+									</div>
+
+									{/* Metadatos con íconos */}
+									<div className="grid grid-cols-3 gap-1.5">
+										{[
+											{ label: 'Sección', value: g.sector_name || '—', icon: 'ti-layout-grid' },
+											{ label: 'Fila', value: g.row_number ?? '—', icon: 'ti-arrows-vertical' },
+											{ label: 'Col', value: g.col_number ?? '—', icon: 'ti-arrows-horizontal' },
+										].map(({ label, value, icon }) => (
+											<div key={label} className="flex flex-col items-center gap-0.5 rounded-lg bg-[color:var(--surface-2)] py-2 text-center">
+												<i className={`ti ${icon} text-[13px] text-[color:var(--muted)]`} aria-hidden="true" />
+												<span className="text-[10px] text-[color:var(--muted)]">{label}</span>
+												<span className="text-sm font-semibold text-[color:var(--text-h)]">{value}</span>
+											</div>
+										))}
+									</div>
+
+									{/* Botón */}
+									<button
+										type="button"
+										onClick={() => openReserveModal(g)}
+										className="flex w-full items-center justify-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2.5 text-xs font-semibold text-green-800 transition hover:bg-green-100"
+									>
+										<i className="ti ti-calendar-plus text-[14px]" aria-hidden="true" />
+										{me ? 'Reservar' : 'Ver y reservar'}
+									</button>
+
 								</div>
 							))}
 						</div>
@@ -1126,62 +1302,62 @@ export function HomeView({
 									</div>
 
 									<div className="mt-4">
-											<div className="text-xs text-[color:var(--muted)]">Tipo de parcela</div>
-											{typeCards.length === 0 ? (
-												<div className="mt-2 text-sm text-[color:var(--text)]">No hay tipos configurados en este sector.</div>
-											) : (
-												<div className="mt-2 grid gap-2 sm:grid-cols-2">
-													{typeCards.map((t) => {
-														const active = String(selectedGraveTypeId || '') === String(t.id)
-														const disabled = t.availableCount <= 0
-														const subtitle = getTypeSubtitle(t.name)
-														return (
-															<button
-																key={t.id}
-																type="button"
-																disabled={disabled}
-																onClick={() => {
-																	setSelectedGraveTypeId(t.id)
-																	setSelectedGraveId(null)
-																	setReserveFormError('')
-																	setReserveStep(2)
-																}}
-																className={
-																	'w-full rounded-xl border px-3 py-3 text-left transition ' +
-																	(active
-																		? 'border-[color:var(--accent)] bg-[color:var(--surface-2)]'
-																		: 'border-[color:var(--border)] bg-transparent hover:bg-[color:var(--surface-2)]') +
-																	(disabled ? ' opacity-50' : '')
-																}
-															>
-																<div className="flex items-start justify-between gap-2">
-																	<div className="text-sm font-semibold text-[color:var(--text-h)]">{t.name}</div>
-																	<div className="text-sm font-semibold text-[color:var(--text-h)]">
-																		{t.minAvailablePriceCents != null ? formatMoney(t.minAvailablePriceCents, 'PEN') : '—'}
-																	</div>
+										<div className="text-xs text-[color:var(--muted)]">Tipo de parcela</div>
+										{typeCards.length === 0 ? (
+											<div className="mt-2 text-sm text-[color:var(--text)]">No hay tipos configurados en este sector.</div>
+										) : (
+											<div className="mt-2 grid gap-2 sm:grid-cols-2">
+												{typeCards.map((t) => {
+													const active = String(selectedGraveTypeId || '') === String(t.id)
+													const disabled = t.availableCount <= 0
+													const subtitle = getTypeSubtitle(t.name)
+													return (
+														<button
+															key={t.id}
+															type="button"
+															disabled={disabled}
+															onClick={() => {
+																setSelectedGraveTypeId(t.id)
+																setSelectedGraveId(null)
+																setReserveFormError('')
+																setReserveStep(2)
+															}}
+															className={
+																'w-full rounded-xl border px-3 py-3 text-left transition ' +
+																(active
+																	? 'border-[color:var(--accent)] bg-[color:var(--surface-2)]'
+																	: 'border-[color:var(--border)] bg-transparent hover:bg-[color:var(--surface-2)]') +
+																(disabled ? ' opacity-50' : '')
+															}
+														>
+															<div className="flex items-start justify-between gap-2">
+																<div className="text-sm font-semibold text-[color:var(--text-h)]">{t.name}</div>
+																<div className="text-sm font-semibold text-[color:var(--text-h)]">
+																	{t.minAvailablePriceCents != null ? formatMoney(t.minAvailablePriceCents, 'PEN') : '—'}
 																</div>
-																{subtitle && <div className="mt-1 text-xs text-[color:var(--muted)]">{subtitle}</div>}
-																{!subtitle && <div className="mt-1 text-xs text-[color:var(--muted)]">{t.availableCount} disponibles</div>}
-															</button>
-														)
+															</div>
+															{subtitle && <div className="mt-1 text-xs text-[color:var(--muted)]">{subtitle}</div>}
+															{!subtitle && <div className="mt-1 text-xs text-[color:var(--muted)]">{t.availableCount} disponibles</div>}
+														</button>
+													)
 												})}
-												</div>
-											)}
+											</div>
+										)}
 
 										<div className="text-xs text-[color:var(--muted)]">Mapa del sector — haz clic para seleccionar</div>
 										{mapLoading && <div className="mt-2 text-sm text-[color:var(--text)]">Cargando mapa…</div>}
 										{mapError && <div className="mt-2 text-sm text-red-600">{mapError}</div>}
 										{!mapLoading && !mapError && (
-												<div className="mt-3 overflow-x-auto pb-2">
-													<div
-														className="ui-grave-grid"
-														style={{ gridTemplateColumns: `repeat(${Math.max(mapCols || 6, 1)}, var(--cell-w))` }}
-													>
+											<div className="mt-3 overflow-x-auto pb-2">
+												<div
+													className="ui-grave-grid"
+													style={{ gridTemplateColumns: `repeat(${Math.max(mapCols || 6, 1)}, var(--cell-w))` }}
+												>
 													{mapGraves.map((g) => {
 														const state = computeCellState(g)
-																const typeOk =
-																	selectedGraveTypeId == null || String(g.grave_type_id || '') === String(selectedGraveTypeId)
-																const selectable = state === 'available' && typeOk
+														const typeOk =
+															selectedGraveTypeId == null || String(g.grave_type_id || '') === String(selectedGraveTypeId)
+														const selectable = state === 'available' && typeOk
 														const isSelected = selectedGraveId === g.id
 														return (
 															<button
@@ -1192,18 +1368,18 @@ export function HomeView({
 																data-selected={isSelected ? 'true' : 'false'}
 																disabled={!selectable}
 																title={g.code}
-																	onClick={() => {
-																		if (!selectable) return
-																		setSelectedGraveId(g.id)
-																		if (g.grave_type_id != null) setSelectedGraveTypeId(String(g.grave_type_id))
-																		setReserveStep(3)
-																	}}
+																onClick={() => {
+																	if (!selectable) return
+																	setSelectedGraveId(g.id)
+																	if (g.grave_type_id != null) setSelectedGraveTypeId(String(g.grave_type_id))
+																	setReserveStep(3)
+																}}
 															>
 																{displayCellNumber(g) || '•'}
 															</button>
 														)
 													})}
-													</div>
+												</div>
 
 												<div className="ui-grave-legend">
 													<div className="ui-grave-legend__item">
@@ -1252,63 +1428,63 @@ export function HomeView({
 								</div>
 							</div>
 
-						<div className="ui-card overflow-hidden p-0">
-							<div className="px-4 py-3" style={{ background: 'linear-gradient(90deg, var(--az1), var(--az2))' }}>
-								<div className="text-sm font-semibold text-white">Resumen de reserva</div>
-							</div>
-							<div className="p-4">
-																<div className="flex items-center justify-between py-2 text-sm">
-																	<span className="text-[color:var(--muted)]">Titular</span>
-																	<span className="font-medium text-[color:var(--text-h)]">{me?.email || '—'}</span>
-																</div>
-								<div className="flex items-center justify-between border-t border-[color:var(--border)] py-2 text-sm">
-									<span className="text-[color:var(--muted)]">Sector</span>
-									<span className="font-medium text-[color:var(--text-h)]">
-										{selectedGrave?.sector_name || mapSectors.find((s) => String(s.id) === String(mapSectorId))?.name || '—'}
-									</span>
+							<div className="ui-card overflow-hidden p-0">
+								<div className="px-4 py-3" style={{ background: 'linear-gradient(90deg, var(--az1), var(--az2))' }}>
+									<div className="text-sm font-semibold text-white">Resumen de reserva</div>
 								</div>
-								<div className="flex items-center justify-between border-t border-[color:var(--border)] py-2 text-sm">
-									<span className="text-[color:var(--muted)]">Parcela</span>
-									<span className="font-medium text-[color:var(--text-h)]">{selectedGrave ? selectedGrave.code : '— seleccionar'}</span>
-								</div>
-								<div className="flex items-center justify-between border-t border-[color:var(--border)] py-2 text-sm">
-									<span className="text-[color:var(--muted)]">Tipo</span>
-									<span className="font-medium text-[color:var(--text-h)]">{selectedGrave?.grave_type_name || '—'}</span>
-								</div>
-								<div className="mt-3 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-2)] px-3 py-3">
-									<div className="flex items-center justify-between">
-										<span className="text-sm font-medium text-[color:var(--text)]">Total estimado</span>
-										<span className="text-lg font-semibold text-[color:var(--text-h)]">{formatMoney(selectedGrave?.price_cents || 0, 'PEN')}</span>
+								<div className="p-4">
+									<div className="flex items-center justify-between py-2 text-sm">
+										<span className="text-[color:var(--muted)]">Titular</span>
+										<span className="font-medium text-[color:var(--text-h)]">{me?.email || '—'}</span>
 									</div>
-									<div className="mt-1 text-xs text-[color:var(--muted)]">Se crea como pendiente hasta aprobación del administrador.</div>
-								</div>
-
-								{reserveCreated && lastReservation ? (
-									<div className="mt-3 rounded-md border border-[color:var(--accent-border)] bg-[color:var(--accent-bg)] px-3 py-3 text-sm text-[color:var(--text-h)]">
-										<div className="font-semibold">Reserva creada</div>
-										<div className="mt-1 text-xs text-[color:var(--muted)]">
-											Código: <span className="font-semibold text-[color:var(--text-h)]">{lastReservation.code || '—'}</span> · Estado:{' '}
-											<span className="font-semibold text-[color:var(--text-h)]">{formatReservationStatus(lastReservation.status)}</span>
+									<div className="flex items-center justify-between border-t border-[color:var(--border)] py-2 text-sm">
+										<span className="text-[color:var(--muted)]">Sector</span>
+										<span className="font-medium text-[color:var(--text-h)]">
+											{selectedGrave?.sector_name || mapSectors.find((s) => String(s.id) === String(mapSectorId))?.name || '—'}
+										</span>
+									</div>
+									<div className="flex items-center justify-between border-t border-[color:var(--border)] py-2 text-sm">
+										<span className="text-[color:var(--muted)]">Parcela</span>
+										<span className="font-medium text-[color:var(--text-h)]">{selectedGrave ? selectedGrave.code : '— seleccionar'}</span>
+									</div>
+									<div className="flex items-center justify-between border-t border-[color:var(--border)] py-2 text-sm">
+										<span className="text-[color:var(--muted)]">Tipo</span>
+										<span className="font-medium text-[color:var(--text-h)]">{selectedGrave?.grave_type_name || '—'}</span>
+									</div>
+									<div className="mt-3 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-2)] px-3 py-3">
+										<div className="flex items-center justify-between">
+											<span className="text-sm font-medium text-[color:var(--text)]">Total estimado</span>
+											<span className="text-lg font-semibold text-[color:var(--text-h)]">{formatMoney(selectedGrave?.price_cents || 0, 'PEN')}</span>
 										</div>
+										<div className="mt-1 text-xs text-[color:var(--muted)]">Se crea como pendiente hasta aprobación del administrador.</div>
 									</div>
-								) : null}
 
-								{reserveFormError && <div className="mt-3 text-sm text-red-600">{reserveFormError}</div>}
-								{error && <div className="mt-2 text-sm text-red-600">{error}</div>}
+									{reserveCreated && lastReservation ? (
+										<div className="mt-3 rounded-md border border-[color:var(--accent-border)] bg-[color:var(--accent-bg)] px-3 py-3 text-sm text-[color:var(--text-h)]">
+											<div className="font-semibold">Reserva creada</div>
+											<div className="mt-1 text-xs text-[color:var(--muted)]">
+												Código: <span className="font-semibold text-[color:var(--text-h)]">{lastReservation.code || '—'}</span> · Estado:{' '}
+												<span className="font-semibold text-[color:var(--text-h)]">{formatReservationStatus(lastReservation.status)}</span>
+											</div>
+										</div>
+									) : null}
 
-																{!reserveCreated ? (
-																	<button
-																		onClick={(e) => submitReserve(e)}
-																		disabled={!canReserve}
-																		className="mt-3 w-full rounded-md bg-[color:var(--accent)] px-3 py-3 text-sm font-medium text-[color:var(--on-accent)] disabled:opacity-50"
-																		type="button"
-																	>
-																		{creatingId != null ? 'Reservando…' : me ? 'Confirmar reserva' : 'Iniciar sesión para reservar'}
-																	</button>
-																) : null}
-								{!canReserve && confirmHint && <div className="mt-2 text-xs text-[color:var(--muted)]">{confirmHint}</div>}
+									{reserveFormError && <div className="mt-3 text-sm text-red-600">{reserveFormError}</div>}
+									{error && <div className="mt-2 text-sm text-red-600">{error}</div>}
+
+									{!reserveCreated ? (
+										<button
+											onClick={(e) => submitReserve(e)}
+											disabled={!canReserve}
+											className="mt-3 w-full rounded-md bg-[color:var(--accent)] px-3 py-3 text-sm font-medium text-[color:var(--on-accent)] disabled:opacity-50"
+											type="button"
+										>
+											{creatingId != null ? 'Reservando…' : me ? 'Confirmar reserva' : 'Iniciar sesión para reservar'}
+										</button>
+									) : null}
+									{!canReserve && confirmHint && <div className="mt-2 text-xs text-[color:var(--muted)]">{confirmHint}</div>}
+								</div>
 							</div>
-						</div>
 						</div>
 					</div>
 				</div>
