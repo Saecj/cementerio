@@ -49,6 +49,8 @@ function buildAuthRouter() {
 		} else {
 			console.warn(`[auth] SMTP no configurado; código OTP para ${email}: ${code}`);
 		}
+	}
+}
 
 
 		async function loadUserSession(userId) {
@@ -289,6 +291,7 @@ function buildAuthRouter() {
 			} else {
 				console.warn(`[auth] SMTP no configurado; código OTP para ${email}: ${code}`);
 			}
+		
 
 			router.post('/verify-email', async (req, res) => {
 				const email = normalizeEmail(req.body?.email);
