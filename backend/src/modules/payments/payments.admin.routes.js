@@ -42,16 +42,24 @@ function buildPaymentsAdminRouter() {
 					p.reservation_id,
 					p.payment_type_id,
 					pt.name AS payment_type_name,
+					p.base_amount_cents,
+					p.finance_charge_cents,
+					p.installment_months,
+					p.installment_amount_cents,
 					p.amount_cents,
 					p.currency,
 					p.status,
 					p.paid_at,
 					p.created_at,
-					u.email AS client_email
+					u.email AS client_email,
+					c.full_name AS client_full_name,
+					c.phone AS client_phone,
+					r.reservation_code
 				FROM payments p
 				JOIN payment_types pt ON pt.id = p.payment_type_id
 				JOIN clients c ON c.id = p.client_id
 				JOIN users u ON u.id = c.user_id
+				LEFT JOIN reservations r ON r.id = p.reservation_id
 				ORDER BY p.id DESC
 				LIMIT 200
 			`,

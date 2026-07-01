@@ -39,13 +39,31 @@ function buildReservationsAdminRouter() {
 						r.reserved_to,
 						r.status,
 						r.created_at,
+						GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (now() - r.created_at)) / 86400))::int AS days_registered,
 						r.reserved_deceased_full_name AS deceased_full_name,
 						g.code AS grave_code,
-						u.email AS client_email
+						COALESCE(g.price_cents, 0) AS price_cents,
+						u.email AS client_email,
+						c.full_name AS client_full_name,
+						c.phone AS client_phone,
+						COALESCE(ps.paid_cents, 0) AS paid_cents,
+						COALESCE(ps.pending_cents, 0) AS pending_cents,
+						CASE
+							WHEN COALESCE(ps.paid_cents, 0) >= COALESCE(g.price_cents, 0) AND COALESCE(g.price_cents, 0) > 0 THEN 'paid'
+							WHEN COALESCE(ps.pending_cents, 0) > 0 THEN 'pending'
+							ELSE 'pending'
+						END AS payment_status
 					FROM reservations r
 					JOIN clients c ON c.id = r.client_id
 					JOIN users u ON u.id = c.user_id
 					JOIN graves g ON g.id = r.grave_id
+					LEFT JOIN LATERAL (
+						SELECT
+							COALESCE(SUM(p.amount_cents) FILTER (WHERE p.status = 'paid'), 0) AS paid_cents,
+							COALESCE(SUM(p.amount_cents) FILTER (WHERE p.status = 'pending'), 0) AS pending_cents
+						FROM payments p
+						WHERE p.reservation_id = r.id
+					) ps ON true
 					ORDER BY r.id DESC
 					LIMIT 200
 				`
@@ -59,13 +77,31 @@ function buildReservationsAdminRouter() {
 						r.reserved_to,
 						r.status,
 						r.created_at,
+						GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (now() - r.created_at)) / 86400))::int AS days_registered,
 						NULL::text AS deceased_full_name,
 						g.code AS grave_code,
-						u.email AS client_email
+						COALESCE(g.price_cents, 0) AS price_cents,
+						u.email AS client_email,
+						c.full_name AS client_full_name,
+						c.phone AS client_phone,
+						COALESCE(ps.paid_cents, 0) AS paid_cents,
+						COALESCE(ps.pending_cents, 0) AS pending_cents,
+						CASE
+							WHEN COALESCE(ps.paid_cents, 0) >= COALESCE(g.price_cents, 0) AND COALESCE(g.price_cents, 0) > 0 THEN 'paid'
+							WHEN COALESCE(ps.pending_cents, 0) > 0 THEN 'pending'
+							ELSE 'pending'
+						END AS payment_status
 					FROM reservations r
 					JOIN clients c ON c.id = r.client_id
 					JOIN users u ON u.id = c.user_id
 					JOIN graves g ON g.id = r.grave_id
+					LEFT JOIN LATERAL (
+						SELECT
+							COALESCE(SUM(p.amount_cents) FILTER (WHERE p.status = 'paid'), 0) AS paid_cents,
+							COALESCE(SUM(p.amount_cents) FILTER (WHERE p.status = 'pending'), 0) AS pending_cents
+						FROM payments p
+						WHERE p.reservation_id = r.id
+					) ps ON true
 					ORDER BY r.id DESC
 					LIMIT 200
 				`,

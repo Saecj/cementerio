@@ -320,6 +320,7 @@ export function HomeView({
 	const [mapSectors, setMapSectors] = useState([])
 	const [mapSectorId, setMapSectorId] = useState(null)
 	const [mapGraves, setMapGraves] = useState([])
+	const [home3dGraves, setHome3dGraves] = useState([])
 	const [mapLoading, setMapLoading] = useState(false)
 	const [mapError, setMapError] = useState('')
 
@@ -337,45 +338,99 @@ export function HomeView({
 	}, [mapGraves, selectedGraveId])
 
 	const home3dMarkers = useMemo(() => {
-		const src = Array.isArray(mapGraves) && mapGraves.length ? mapGraves : Array.isArray(available) ? available : []
-		const list = src.slice(0, 240)
-		const rows = list.map((g) => Number(g?.row_number)).filter((n) => Number.isFinite(n))
-		const cols = list.map((g) => Number(g?.col_number)).filter((n) => Number.isFinite(n))
-		const rowMin = rows.length ? Math.min(...rows) : 1
-		const rowMax = rows.length ? Math.max(...rows) : 0
-		const colMin = cols.length ? Math.min(...cols) : 1
-		const colMax = cols.length ? Math.max(...cols) : 0
-		const sectors = Array.from(new Set(list.map((g) => String(g?.sector_id || g?.sector_name || 'general'))))
+		const src = Array.isArray(home3dGraves) && home3dGraves.length ? home3dGraves : Array.isArray(mapGraves) && mapGraves.length ? mapGraves : Array.isArray(available) ? available : []
+		const list = src
+		const sectionLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
+		const sectionSlots = [
+			{ centerX: -18.5, centerZ: 8.8 },
+			{ centerX: 18.5, centerZ: 8.8 },
+			{ centerX: -18.5, centerZ: -11.8 },
+			{ centerX: 18.5, centerZ: -11.8 },
+			{ centerX: -26.2, centerZ: -1.5 },
+			{ centerX: 26.2, centerZ: -1.5 },
+			{ centerX: -7.6, centerZ: -15.2 },
+			{ centerX: 7.6, centerZ: -15.2 },
+		]
+		const bySector = new Map()
+		list.forEach((g, idx) => {
+			const typeName = String(g?.grave_type_name || '').trim().toLowerCase()
+			const isPremium = typeName === 'premium'
+			const rawName = String(g?.sector_name || '').trim()
+			const key = rawName || String(g?.sector_id || 'general')
+			if (!bySector.has(key)) {
+				bySector.set(key, {
+					key,
+					name: rawName || sectionLetters[bySector.size] || `Sección ${bySector.size + 1}`,
+					items: [],
+				})
+			}
+			bySector.get(key).items.push({ g, idx })
+		})
 
-		return list.map((g, i) => {
+		const placed = []
+		Array.from(bySector.values())
+			.sort((a, b) => String(a.name).localeCompare(String(b.name), 'es', { numeric: true, sensitivity: 'base' }))
+			.forEach((sector, baseIndex) => {
+			const sorted = [...sector.items].sort((a, b) => {
+				const ar = Number(a.g?.row_number)
+				const br = Number(b.g?.row_number)
+				const ac = Number(a.g?.col_number)
+				const bc = Number(b.g?.col_number)
+				if (Number.isFinite(ar) && Number.isFinite(br) && ar !== br) return ar - br
+				if (Number.isFinite(ac) && Number.isFinite(bc) && ac !== bc) return ac - bc
+				return a.idx - b.idx
+			})
+			const slot = sectionSlots[baseIndex % sectionSlots.length]
+			const overflowRing = Math.floor(baseIndex / sectionSlots.length)
+			const baseLetter = String(sector.name || sectionLetters[baseIndex] || 'S').replace(/^Secci[oó]n\s+/i, '').trim().slice(0, 2).toUpperCase()
+			const chunkCount = Math.max(1, Math.ceil(sorted.length / 10))
+			const sectionCenterX = slot.centerX + overflowRing * (slot.centerX < 0 ? 1.4 : -1.4)
+			const sectionCenterZ = slot.centerZ + overflowRing * 1.15
+			const nicheCols = Math.min(3, chunkCount)
+			const nicheRows = Math.ceil(chunkCount / nicheCols)
+			const sectionWidth = Math.max(12.8, nicheCols * 4.4 + 2.8)
+			const sectionDepth = Math.max(11.2, nicheRows * 4.4 + 7.2)
+			sorted.forEach((entry, localIndex) => {
+				const chunk = Math.floor(localIndex / 10)
+				const nicheCol = chunk % nicheCols
+				const nicheRow = Math.floor(chunk / nicheCols)
+				const nicheCenterX = sectionCenterX + (nicheCol - (nicheCols - 1) / 2) * 4.4
+				const nicheCenterZ = sectionCenterZ - sectionDepth / 2 + 1.65 + nicheRow * 4.4
+				const sectionLetter = baseLetter
+				const sectionName = `Sección ${baseLetter}`
+				placed.push({
+					...entry,
+					isPremium: String(entry.g?.grave_type_name || '').trim().toLowerCase() === 'premium',
+					localIndex: localIndex % 10,
+					sectionId: sector.key,
+					sectionName,
+					sectionLetter,
+					originalSectorName: sector.name,
+					sectionCenterX,
+					sectionCenterZ,
+					sectionWidth,
+					sectionDepth,
+					nicheIndex: chunk,
+					nicheCenterX,
+					nicheCenterZ,
+				})
+			})
+		})
+
+		return placed.map((entry) => {
+			const { g, idx: i } = entry
 			const code = String(g?.code || g?.grave_code || g?.id || i)
 			const id = `grave-${code}`
 			const seed = makeStableSeed(id)
 			const state = computeCellState(g)
-			const sectorKey = String(g?.sector_id || g?.sector_name || 'general')
-			const sectorIndex = Math.max(0, sectors.indexOf(sectorKey))
 
-			const r = Number(g?.row_number)
-			const c = Number(g?.col_number)
-			let x = 10 + stable01(seed) * 80
-			let y = 18 + stable01(seed ^ 0x9e3779b9) * 70
-			let worldX = null
-			let worldZ = null
-			if (Number.isFinite(r) && Number.isFinite(c) && rowMax > 1 && colMax > 1) {
-				const colT = (c - colMin) / Math.max(1, colMax - colMin)
-				const rowT = (r - rowMin) / Math.max(1, rowMax - rowMin)
-				const side = sectorIndex % 2 === 0 ? -1 : 1
-				const lane = Math.floor(sectorIndex / 2)
-				const leftMin = -25.5 + lane * 1.2
-				const leftMax = -5.2 + lane * 1.2
-				const rightMin = 5.2 - lane * 1.2
-				const rightMax = 25.5 - lane * 1.2
-				worldX = side < 0 ? leftMin + colT * (leftMax - leftMin) : rightMin + colT * (rightMax - rightMin)
-				worldZ = -16.2 + rowT * 29.2
-				if (Math.abs(worldZ + 4.4) < 2.2) worldZ += worldZ < -4.4 ? -2.4 : 2.4
-				x = 50 + (worldX / 28) * 50
-				y = 50 + (worldZ / 18) * 50
-			}
+			const col = Math.floor(entry.localIndex / 5)
+			const row = entry.localIndex % 5
+			const worldX = entry.nicheCenterX + (col - 0.5) * 0.78
+			const worldZ = entry.nicheCenterZ + 0.72
+			const worldY = 0.58 + (4 - row) * 0.34
+			const x = 50 + (worldX / 28) * 50
+			const y = 50 + (worldZ / 18) * 50
 
 			const hue = Math.floor(stable01(seed ^ 0x7f4a7c15) * 140) // rango más cercano a verde
 			return {
@@ -383,7 +438,9 @@ export function HomeView({
 				record: {
 					id: g?.id,
 					grave_code: g?.code || g?.grave_code || '',
-					sector_name: g?.sector_name || '',
+					sector_name: entry.sectionLetter || g?.sector_name || '',
+					section_name: entry.sectionName,
+					original_sector_name: entry.originalSectorName || g?.sector_name || '',
 					row_number: g?.row_number,
 					col_number: g?.col_number,
 					branch_name: g?.branch_name || '',
@@ -395,9 +452,26 @@ export function HomeView({
 					payment_status: g?.payment_status || '',
 					availability_status: g?.availability_status || '',
 					has_burial: !!g?.has_burial,
+					grave_type_id: g?.grave_type_id,
+					grave_type_name: g?.grave_type_name || '',
+					is_premium: !!entry.isPremium,
 				},
-				sectionId: g?.sector_id || g?.sector_name || 'general',
-				sectionName: g?.sector_name || 'Sector general',
+				sectionId: entry.sectionId,
+				sectionName: entry.sectionName,
+				sectionLetter: entry.sectionLetter,
+				sectionCenterX: entry.sectionCenterX,
+				sectionCenterZ: entry.sectionCenterZ,
+				sectionWidth: entry.sectionWidth,
+				sectionDepth: entry.sectionDepth,
+				sectionCapacity: 10,
+				nicheCount: 1,
+				isPremium: !!entry.isPremium,
+				renderMode: 'nicheSlot',
+				nicheCenterX: entry.nicheCenterX,
+				nicheCenterZ: entry.nicheCenterZ,
+				nicheIndex: entry.nicheIndex,
+				nicheSlotIndex: entry.localIndex,
+				worldY,
 				state,
 				status: state,
 				worldX,
@@ -407,7 +481,7 @@ export function HomeView({
 				hue,
 			}
 		})
-	}, [available, mapGraves])
+	}, [available, home3dGraves, mapGraves])
 
 	function getSectorShortName(name) {
 		const s = String(name || '').trim()
@@ -574,14 +648,39 @@ export function HomeView({
 				setMapSectors([])
 				setMapSectorId(null)
 				setMapGraves([])
+				if (!nextSectorId) setHome3dGraves([])
 				return
 			}
 			const sectors = Array.isArray(result.data?.sectors) ? result.data.sectors : []
 			const sectorId = result.data?.sectorId ?? null
 			const graves = Array.isArray(result.data?.graves) ? result.data.graves : []
+			let allGravesFor3d = graves
+			if (!nextSectorId && sectors.length > 1) {
+				try {
+					const sectorRequests = await Promise.all(
+						sectors.map(async (s) => {
+							const sectorParams = new URLSearchParams()
+							if (s?.id != null) sectorParams.set('sectorId', String(s.id))
+							if (branchId != null) sectorParams.set('branchId', String(branchId))
+							const sectorQs = sectorParams.toString() ? `?${sectorParams.toString()}` : ''
+							const sectorResult = await api(`/api/client/grave-map${sectorQs}`)
+							return sectorResult.ok && Array.isArray(sectorResult.data?.graves) ? sectorResult.data.graves : []
+						}),
+					)
+					const byId = new Map()
+					sectorRequests.flat().forEach((g) => {
+						const key = g?.id != null ? String(g.id) : `${g?.sector_name || ''}-${g?.code || g?.grave_code || ''}`
+						if (key) byId.set(key, g)
+					})
+					if (byId.size > graves.length) allGravesFor3d = Array.from(byId.values())
+				} catch {
+					allGravesFor3d = graves
+				}
+			}
 			setMapSectors(sectors)
 			setMapSectorId(sectorId)
 			setMapGraves(graves)
+			if (!nextSectorId) setHome3dGraves(allGravesFor3d)
 		} finally {
 			setMapLoading(false)
 		}

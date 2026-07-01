@@ -71,6 +71,10 @@ function stateLabel(state) {
 	return 'Disponible'
 }
 
+function isPremiumMarker(m) {
+	return !!(m?.isPremium || m?.record?.is_premium || String(m?.record?.grave_type_name || '').trim().toLowerCase() === 'premium')
+}
+
 const graveStateLegend = [
 	{ state: 'available', label: 'Disponible', color: '#22c55e' },
 	{ state: 'reserved', label: 'Reservada', color: '#f59e0b' },
@@ -116,7 +120,7 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 			name: asName(r),
 			years: toYearsLabel(r),
 			grave: r?.grave_code ? String(r.grave_code) : '',
-			sector: r?.sector_name ? String(r.sector_name) : '',
+			sector: picked?.sectionName || (r?.section_name ? String(r.section_name) : '') || (r?.sector_name ? `Sección ${String(r.sector_name)}` : ''),
 			row: r?.row_number != null ? String(r.row_number) : '',
 			col: r?.col_number != null ? String(r.col_number) : '',
 			status: stateLabel(markerState(picked)),
@@ -124,10 +128,17 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 	}, [picked])
 
 	const sectionSummary = useMemo(() => {
-		const count = Array.isArray(sections) && sections.length ? sections.length : 1
-		const first = Array.isArray(sections) && sections.length ? sections[0]?.name : 'Sector general'
+		const markerSectionNames = Array.from(
+			new Set(
+				(Array.isArray(markers) ? markers : [])
+					.map((m) => String(m?.sectionName || m?.record?.sector_name || '').trim())
+					.filter(Boolean),
+			),
+		)
+		const count = markerSectionNames.length || (Array.isArray(sections) && sections.length ? sections.length : 1)
+		const first = markerSectionNames[0] || (Array.isArray(sections) && sections.length ? sections[0]?.name : 'Sector general')
 		return { count, first: first || 'Sector general' }
-	}, [sections])
+	}, [markers, sections])
 
 	useEffect(() => {
 		setPicked((prev) => {
@@ -250,8 +261,7 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 			const bgBase = new THREE.Color(cssVar('--surface-2', '#eefbf2'))
 			const bgGreen = themedGreen(cssVar('--az4', '#4ade80'))
 			if (isImmersive) {
-				const night = new THREE.Color(cssVar('--az1', '#052e1f'))
-				scene.background = night.clone().lerp(bgGreen, 0.08)
+				scene.background = new THREE.Color('#314245')
 			} else {
 				scene.background = bgBase.clone().lerp(bgGreen, 0.22)
 			}
@@ -296,13 +306,80 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 			scene.add(hemi)
 			scene.add(new THREE.AmbientLight(0xffffff, isImmersive ? 0.24 : 0.38))
 
+			function addAtmosphere() {
+				const skyGeo = new THREE.SphereGeometry(118, 32, 16)
+				const skyMat = new THREE.ShaderMaterial({
+					side: THREE.BackSide,
+					depthWrite: false,
+					uniforms: {
+						topColor: { value: new THREE.Color('#7fb8d9') },
+						bottomColor: { value: new THREE.Color('#d8efe5') },
+					},
+					vertexShader: `
+						varying vec3 vWorldPosition;
+						void main() {
+							vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+							vWorldPosition = worldPosition.xyz;
+							gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+						}
+					`,
+					fragmentShader: `
+						uniform vec3 topColor;
+						uniform vec3 bottomColor;
+						varying vec3 vWorldPosition;
+						void main() {
+							float h = normalize(vWorldPosition).y * 0.5 + 0.5;
+							gl_FragColor = vec4(mix(bottomColor, topColor, smoothstep(0.08, 0.92, h)), 1.0);
+						}
+					`,
+				})
+				const sky = new THREE.Mesh(skyGeo, skyMat)
+				scene.add(sky)
+
+				const sunMat = new THREE.MeshBasicMaterial({ color: '#fff2b8', transparent: true, opacity: 0.94, depthWrite: false })
+				const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(3.0, 40), sunMat)
+				sunDisc.position.set(-34, 28, -48)
+				sunDisc.lookAt(camera.position)
+				sunDisc.renderOrder = -5
+				scene.add(sunDisc)
+
+				const moonMat = new THREE.MeshBasicMaterial({ color: '#f8fafc', transparent: true, opacity: 0.62, depthWrite: false })
+				const moon = new THREE.Mesh(new THREE.CircleGeometry(1.5, 32), moonMat)
+				moon.position.set(36, 24, -52)
+				moon.lookAt(camera.position)
+				moon.renderOrder = -5
+				scene.add(moon)
+
+				const cloudMat = new THREE.MeshStandardMaterial({ color: '#f8fafc', transparent: true, opacity: 0.78, roughness: 1.0, metalness: 0 })
+				const cloudPositions = [
+					[-30, 20, -34, 1.1],
+					[-8, 23, -42, 0.9],
+					[18, 21, -36, 1.0],
+					[34, 19, -22, 0.78],
+				]
+				cloudPositions.forEach(([x, y, z, s], idx) => {
+					const cloud = new THREE.Group()
+					for (let i = 0; i < 5; i++) {
+						const puff = new THREE.Mesh(new THREE.SphereGeometry(1.1 + stable01(idx * 31 + i) * 0.55, 12, 8), cloudMat)
+						puff.position.set((i - 2) * 1.35, stable01(idx * 101 + i) * 0.45, stable01(idx * 71 + i) * 0.55)
+						puff.scale.set(1.45, 0.55, 0.75)
+						cloud.add(puff)
+					}
+					cloud.position.set(x, y, z)
+					cloud.scale.setScalar(s)
+					scene.add(cloud)
+				})
+			}
+
+			addAtmosphere()
+
 			// Césped y follaje más verdes (vivos) manteniendo un look claro.
 			const grassA = themedGreen(cssVar('--az4', '#4ade80'))
-			grassA.setHSL(0.33, 0.56, 0.56)
+			grassA.setHSL(0.31, 0.42, 0.52)
 			const grassB = themedGreen(cssVar('--az2', '#064e3b')).lerp(grassA, 0.72)
-			grassB.setHSL(0.33, 0.46, 0.48)
+			grassB.setHSL(0.30, 0.34, 0.43)
 			const soil = grassB.clone().offsetHSL(0.0, 0.06, -0.18)
-			const path = new THREE.Color(cssVar('--surface', '#ffffff')).lerp(new THREE.Color(cssVar('--surface-2', '#f0f4ff')), 0.55)
+			const path = new THREE.Color('#d6ddd4')
 			const pathEdge = new THREE.Color(cssVar('--border', 'rgba(26,58,143,0.13)')).lerp(grassB, 0.35)
 			const stone = new THREE.Color(cssVar('--surface', '#ffffff')).lerp(new THREE.Color(cssVar('--surface-2', '#f0f4ff')), 0.22)
 			const stoneDark = stone.clone().offsetHSL(0, 0, -0.12)
@@ -366,6 +443,44 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 			ground.receiveShadow = true
 			scene.add(ground)
 
+			function addLandscapeBands() {
+				const meadowMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#6f8f62'), roughness: 0.98, metalness: 0 })
+				const flowerMatA = new THREE.MeshStandardMaterial({ color: new THREE.Color('#eab308'), roughness: 0.92, metalness: 0 })
+				const flowerMatB = new THREE.MeshStandardMaterial({ color: new THREE.Color('#f472b6'), roughness: 0.92, metalness: 0 })
+				const shrubMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#2f6f3e'), roughness: 0.96, metalness: 0 })
+				const bandData = [
+					[-39, -3, 9, 54],
+					[39, -3, 9, 54],
+					[0, -39, 58, 8],
+					[0, 35, 58, 7],
+				]
+				bandData.forEach(([x, z, w, d]) => {
+					const band = new THREE.Mesh(new THREE.BoxGeometry(w, 0.035, d), meadowMat)
+					band.position.set(x, 0.025, z)
+					band.receiveShadow = true
+					scene.add(band)
+				})
+
+				for (let i = 0; i < 90; i++) {
+					const side = i % 4
+					const x =
+						side === 0 ? -35 - stable01(i * 17) * 11 :
+						side === 1 ? 35 + stable01(i * 17) * 11 :
+						(stable01(i * 19) - 0.5) * 76
+					const z =
+						side === 2 ? -35 - stable01(i * 23) * 8 :
+						side === 3 ? 33 + stable01(i * 23) * 8 :
+						(stable01(i * 29) - 0.5) * 64
+					const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.035, 0.32, 5), shrubMat)
+					stem.position.set(x, 0.18, z)
+					const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.11, 7, 5), i % 2 === 0 ? flowerMatA : flowerMatB)
+					bloom.position.set(x, 0.38, z)
+					scene.add(stem, bloom)
+				}
+			}
+
+			addLandscapeBands()
+
 			// Senderos con volumen + bordes
 			function addPath(w, d, x, z) {
 				const body = new THREE.Mesh(new THREE.BoxGeometry(w, 0.06, d), pathMat)
@@ -403,6 +518,57 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 			plaza.position.set(0, 0.068, -10.8)
 			plaza.receiveShadow = true
 			scene.add(plaza)
+
+			function addAmenities() {
+				const woodMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#7a5a3a'), roughness: 0.86, metalness: 0.02 })
+				const planterMat = new THREE.MeshStandardMaterial({ color: stoneDark.clone().lerp(new THREE.Color('#a7b3a5'), 0.32), roughness: 0.9, metalness: 0.02 })
+				const bushMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#3f7f4b'), roughness: 0.96, metalness: 0 })
+
+				function bench(x, z, rot = 0) {
+					const g = new THREE.Group()
+					const seat = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.18, 0.45), woodMat)
+					seat.position.set(0, 0.45, 0)
+					const back = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.62, 0.16), woodMat)
+					back.position.set(0, 0.82, -0.28)
+					const legGeo = new THREE.BoxGeometry(0.14, 0.45, 0.14)
+					;[-0.82, 0.82].forEach((lx) => {
+						[-0.12, 0.2].forEach((lz) => {
+							const leg = new THREE.Mesh(legGeo, metalMat)
+							leg.position.set(lx, 0.22, lz)
+							g.add(leg)
+						})
+					})
+					g.add(seat, back)
+					g.position.set(x, 0, z)
+					g.rotation.y = rot
+					scene.add(g)
+				}
+
+				function planter(x, z, w = 2.2, d = 0.72) {
+					const box = new THREE.Mesh(new THREE.BoxGeometry(w, 0.38, d), planterMat)
+					box.position.set(x, 0.2, z)
+					box.castShadow = true
+					box.receiveShadow = true
+					scene.add(box)
+					for (let i = 0; i < 4; i++) {
+						const bush = new THREE.Mesh(new THREE.SphereGeometry(0.28, 9, 6), bushMat)
+						bush.position.set(x - w / 2 + 0.45 + i * ((w - 0.9) / 3), 0.55, z)
+						bush.scale.set(1.1, 0.55, 0.8)
+						scene.add(bush)
+					}
+				}
+
+				bench(-5.4, -9.2, Math.PI / 2)
+				bench(5.4, -9.2, -Math.PI / 2)
+				bench(-6.1, 4.8, Math.PI / 2)
+				bench(6.1, 4.8, -Math.PI / 2)
+				planter(-8.2, -10.8)
+				planter(8.2, -10.8)
+				planter(-10.8, 9.4, 2.8, 0.72)
+				planter(10.8, 9.4, 2.8, 0.72)
+			}
+
+			addAmenities()
 
 			function addDirectionMarker() {
 				const group = new THREE.Group()
@@ -476,7 +642,7 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 				return { x, z }
 			}
 
-			function addSectionGuides() {
+			function collectVisualSections() {
 				if (!Array.isArray(markers) || markers.length === 0) return
 				const bySection = new Map()
 				markers.forEach((m, idx) => {
@@ -488,6 +654,7 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 						bySection.set(key, {
 							key,
 							name,
+							letter: String(m?.sectionLetter || name || '?').replace(/^Secci[oó]n\s+/i, '').slice(0, 3).toUpperCase(),
 							count: 0,
 							minX: Infinity,
 							maxX: -Infinity,
@@ -510,7 +677,12 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 					if (s.width == null && Number.isFinite(Number(m?.sectionWidth))) s.width = Number(m.sectionWidth)
 					if (s.depth == null && Number.isFinite(Number(m?.sectionDepth))) s.depth = Number(m.sectionDepth)
 				})
+				return bySection
+			}
 
+			function addSectionGuides() {
+				const bySection = collectVisualSections()
+				if (!bySection || bySection.size === 0) return
 				const sectionValues = Array.from(bySection.values())
 				const centers = sectionValues.filter((s) => s.centerX != null && s.centerZ != null)
 				if (centers.length > 1) {
@@ -527,38 +699,48 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 
 				const guideGroup = new THREE.Group()
 				const sectionBaseMat = new THREE.MeshStandardMaterial({
-					color: grassA.clone().offsetHSL(0, 0.03, 0.08),
+					color: grassA.clone().offsetHSL(0, 0.05, 0.11),
 					transparent: true,
-					opacity: isImmersive ? 0.22 : 0.34,
+					opacity: isImmersive ? 0.34 : 0.44,
 					roughness: 0.98,
 					metalness: 0,
 				})
 				const borderMat = new THREE.LineBasicMaterial({
-					color: grassA.clone().offsetHSL(0, 0.12, 0.08),
+					color: new THREE.Color('#ecfdf5'),
 					transparent: true,
-					opacity: isImmersive ? 0.55 : 0.72,
+					opacity: isImmersive ? 0.82 : 0.9,
 				})
 
-				function makeLabelTexture(text, count) {
+				function makeLabelTexture(text, count, letter) {
 					const cnv = document.createElement('canvas')
-					cnv.width = 512
-					cnv.height = 128
+					cnv.width = 1024
+					cnv.height = 320
 					const ctx = cnv.getContext('2d')
 					ctx.clearRect(0, 0, cnv.width, cnv.height)
-					ctx.fillStyle = 'rgba(5, 46, 31, 0.76)'
-					ctx.strokeStyle = 'rgba(255, 255, 255, 0.24)'
-					ctx.lineWidth = 3
-					roundRect(ctx, 16, 18, 480, 92, 18)
+					ctx.fillStyle = 'rgba(5, 46, 31, 0.88)'
+					ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)'
+					ctx.lineWidth = 6
+					roundRect(ctx, 24, 26, 976, 268, 34)
 					ctx.fill()
 					ctx.stroke()
+					ctx.fillStyle = 'rgba(134, 239, 172, 0.18)'
+					roundRect(ctx, 54, 58, 180, 204, 26)
+					ctx.fill()
+					ctx.fillStyle = '#86efac'
+					ctx.font = '900 138px Arial'
+					ctx.fillText(letter || 'S', 80, 204)
 					ctx.fillStyle = '#ecfdf5'
-					ctx.font = '700 28px Arial'
-					ctx.fillText(text.slice(0, 26), 38, 58)
-					ctx.fillStyle = 'rgba(236,253,245,0.72)'
-					ctx.font = '700 18px Arial'
-					ctx.fillText(`${count} tumbas`, 38, 88)
+					ctx.font = '900 56px Arial'
+					ctx.fillText(text.slice(0, 22), 280, 128)
+					ctx.fillStyle = 'rgba(236,253,245,0.82)'
+					ctx.font = '800 34px Arial'
+					ctx.fillText(`${count}/10 tumbas`, 282, 188)
+					ctx.fillText('2 nichos', 282, 236)
 					const tex = new THREE.CanvasTexture(cnv)
 					tex.colorSpace = THREE.SRGBColorSpace
+					tex.generateMipmaps = false
+					tex.minFilter = THREE.LinearFilter
+					tex.magFilter = THREE.LinearFilter
 					tex.needsUpdate = true
 					return tex
 				}
@@ -579,35 +761,37 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 
 				sectionValues.forEach((s) => {
 					if (!Number.isFinite(s.minX) || !Number.isFinite(s.minZ)) return
-					const pad = markers.length >= 80 ? 1.6 : 2.2
+					const pad = markers.length >= 80 ? 1.8 : 2.4
 					const w = s.width != null ? Math.max(5.8, s.width) : Math.max(5.8, s.maxX - s.minX + pad * 2)
 					const d = s.depth != null ? Math.max(5.4, s.depth) : Math.max(5.4, s.maxZ - s.minZ + pad * 2)
 					const cx = s.centerX != null ? s.centerX : clamp((s.minX + s.maxX) / 2, -bx + w / 2 + 0.5, bx - w / 2 - 0.5)
 					const cz = s.centerZ != null ? s.centerZ : clamp((s.minZ + s.maxZ) / 2, -bz + d / 2 + 0.5, bz - d / 2 - 4.8)
 
-					const base = new THREE.Mesh(new THREE.BoxGeometry(w, 0.035, d), sectionBaseMat)
-					base.position.set(cx, 0.03, cz)
+					const base = new THREE.Mesh(new THREE.BoxGeometry(w, 0.055, d), sectionBaseMat)
+					base.position.set(cx, 0.045, cz)
 					base.receiveShadow = true
 					guideGroup.add(base)
 
 					const edgeGeo = new THREE.BufferGeometry().setFromPoints([
-						new THREE.Vector3(cx - w / 2, 0.095, cz - d / 2),
-						new THREE.Vector3(cx + w / 2, 0.095, cz - d / 2),
-						new THREE.Vector3(cx + w / 2, 0.095, cz + d / 2),
-						new THREE.Vector3(cx - w / 2, 0.095, cz + d / 2),
-						new THREE.Vector3(cx - w / 2, 0.095, cz - d / 2),
+						new THREE.Vector3(cx - w / 2, 0.13, cz - d / 2),
+						new THREE.Vector3(cx + w / 2, 0.13, cz - d / 2),
+						new THREE.Vector3(cx + w / 2, 0.13, cz + d / 2),
+						new THREE.Vector3(cx - w / 2, 0.13, cz + d / 2),
+						new THREE.Vector3(cx - w / 2, 0.13, cz - d / 2),
 					])
 					guideGroup.add(new THREE.Line(edgeGeo, borderMat))
 
 					if (bySection.size <= 12) {
 						const spriteMat = new THREE.SpriteMaterial({
-							map: makeLabelTexture(s.name, s.count),
+							map: makeLabelTexture(s.name, s.count, s.letter),
 							transparent: true,
 							depthWrite: false,
+							depthTest: false,
 						})
 						const label = new THREE.Sprite(spriteMat)
-						label.position.set(cx, 1.25, cz - d / 2 + 0.55)
-						label.scale.set(3.6, 0.9, 1)
+						label.position.set(cx, 3.75, cz - d / 2 - 0.85)
+						label.scale.set(5.8, 1.8, 1)
+						label.renderOrder = 20
 						guideGroup.add(label)
 					}
 				})
@@ -615,12 +799,221 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 				scene.add(guideGroup)
 			}
 
-			function makeInstancedGraves() {
+			function addNichesForSections() {
+				const bySection = collectVisualSections()
+				if (!bySection || bySection.size === 0) return
+				const group = new THREE.Group()
+				const nicheBodyMat = new THREE.MeshStandardMaterial({ color: stone.clone().lerp(new THREE.Color('#ecfdf5'), 0.46), roughness: 0.86, metalness: 0.02 })
+				const nicheBackMat = new THREE.MeshStandardMaterial({ color: stoneDark.clone().lerp(new THREE.Color('#064e3b'), 0.26), roughness: 0.9, metalness: 0.02 })
+				const nicheAccentMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#16a34a'), roughness: 0.62, metalness: 0.02 })
+				const roofMat = new THREE.MeshStandardMaterial({ color: stoneDark.clone().lerp(new THREE.Color('#0f766e'), 0.58), roughness: 0.88, metalness: 0.02 })
+				const slotMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#f8fafc'), roughness: 0.78, metalness: 0.02 })
+				const shadowSlotMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#14532d'), roughness: 0.88, metalness: 0.02 })
+				const premiumBodyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#f3ead7'), roughness: 0.74, metalness: 0.06 })
+				const premiumBackMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#3f321d'), roughness: 0.78, metalness: 0.08 })
+				const premiumAccentMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#d6a936'), roughness: 0.46, metalness: 0.24 })
+				const premiumRoofMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#1f513d'), roughness: 0.72, metalness: 0.1 })
+				const premiumSlotMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#fff7ed'), roughness: 0.68, metalness: 0.08 })
+
+				function addNiche(x, z, rot, labelOffset, isPremium = false) {
+					const niche = new THREE.Group()
+					niche.position.set(x, 0, z)
+					niche.rotation.y = rot
+					const bodyMaterial = isPremium ? premiumBodyMat : nicheBodyMat
+					const backMaterial = isPremium ? premiumBackMat : nicheBackMat
+					const accentMaterial = isPremium ? premiumAccentMat : nicheAccentMat
+					const roofMaterial = isPremium ? premiumRoofMat : roofMat
+					const slotMaterial = isPremium ? premiumSlotMat : slotMat
+					const scale = isPremium ? 1.08 : 1
+
+					const base = new THREE.Mesh(new THREE.BoxGeometry(2.7 * scale, 0.24, 1.12 * scale), backMaterial)
+					base.position.set(0, 0.11, 0)
+					base.castShadow = true
+					base.receiveShadow = true
+					niche.add(base)
+
+					const body = new THREE.Mesh(new THREE.BoxGeometry(2.35 * scale, 2.42, 0.86), bodyMaterial)
+					body.position.set(0, 1.35, 0)
+					body.castShadow = true
+					body.receiveShadow = true
+					niche.add(body)
+
+					const porch = new THREE.Mesh(new THREE.BoxGeometry(2.55 * scale, 2.62, 0.12), backMaterial)
+					porch.position.set(0, 1.35, labelOffset.z * 0.48)
+					porch.castShadow = true
+					niche.add(porch)
+
+					if (isPremium) {
+						const glassMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#dbeafe'), transparent: true, opacity: 0.32, roughness: 0.18, metalness: 0.02 })
+						const glass = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.76, 0.035), glassMat)
+						glass.position.set(0, 1.36, labelOffset.z * 0.72)
+						niche.add(glass)
+					}
+
+					for (let row = 0; row < 5; row++) {
+						for (let col = 0; col < 2; col++) {
+							const slotBack = new THREE.Mesh(new THREE.BoxGeometry(0.43, 0.34, 0.08), isPremium ? premiumBackMat : shadowSlotMat)
+							slotBack.position.set((col - 0.5) * 0.78, 0.58 + (4 - row) * 0.34, labelOffset.z * 0.57)
+							niche.add(slotBack)
+
+							const slot = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.24, 0.1), slotMaterial)
+							slot.position.set((col - 0.5) * 0.78, 0.58 + (4 - row) * 0.34, labelOffset.z * 0.63)
+							slot.castShadow = true
+							niche.add(slot)
+
+							const line = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.035, 0.12), accentMaterial)
+							line.position.set((col - 0.5) * 0.78, 0.44 + (4 - row) * 0.34, labelOffset.z * 0.66)
+							niche.add(line)
+						}
+					}
+
+					const door = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.58, 0.12), backMaterial)
+					door.position.set(0, 0.22, labelOffset.z * 0.66)
+					door.castShadow = true
+					niche.add(door)
+
+					const columnGeo = new THREE.CylinderGeometry(0.075, 0.09, 1.86, 8)
+					;[-1.34, 1.34].forEach((cx) => {
+						const col = new THREE.Mesh(columnGeo, backMaterial)
+						col.position.set(cx * scale, 1.35, labelOffset.z * 0.55)
+						col.castShadow = true
+						niche.add(col)
+					})
+
+					const cap = new THREE.Mesh(new THREE.BoxGeometry(2.78 * scale, 0.18, 1.02), accentMaterial)
+					cap.position.set(0, 2.58, 0)
+					cap.castShadow = true
+					niche.add(cap)
+
+					const roofShape = new THREE.Shape()
+					roofShape.moveTo(-1.55, 0)
+					roofShape.lineTo(0, 0.68)
+					roofShape.lineTo(1.55, 0)
+					roofShape.lineTo(-1.55, 0)
+					const roofGeo = new THREE.ExtrudeGeometry(roofShape, {
+						depth: 1.22,
+						bevelEnabled: true,
+						bevelSize: 0.025,
+						bevelThickness: 0.025,
+						bevelSegments: 1,
+					})
+					roofGeo.translate(0, 0, -0.61)
+					const roof = new THREE.Mesh(roofGeo, roofMaterial)
+					roof.position.set(0, 2.67, 0)
+					roof.castShadow = true
+					niche.add(roof)
+
+					const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 1.32), accentMaterial)
+					ridge.position.set(0, 3.38, 0)
+					ridge.castShadow = true
+					niche.add(ridge)
+
+					if (isPremium) {
+						const plaque = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.16, 0.08), premiumAccentMat)
+						plaque.position.set(0, 2.38, labelOffset.z * 0.72)
+						plaque.castShadow = true
+						niche.add(plaque)
+					}
+
+					group.add(niche)
+				}
+
+				const nicheCenters = new Map()
+				markers.forEach((m) => {
+					if (m?.renderMode !== 'nicheSlot') return
+					const key = `${m?.sectionId || 'general'}:${m?.nicheIndex || 0}`
+					if (nicheCenters.has(key)) return
+					const x = Number(m?.nicheCenterX)
+					const z = Number(m?.nicheCenterZ)
+					if (!Number.isFinite(x) || !Number.isFinite(z)) return
+					nicheCenters.set(key, {
+						x,
+						z,
+					})
+				})
+
+				Array.from(nicheCenters.values()).forEach((n) => {
+					addNiche(n.x, clamp(n.z, -bz + 2.4, bz - 3.8), 0, { x: 0, z: 1 })
+				})
+
+				scene.add(group)
+			}
+
+			function makeNicheSlot(m, idx) {
+				const g = new THREE.Group()
+				g.userData = { marker: m }
+				const seed = stableSeedFromString(String(m?.id || idx))
+				const palette = gravePalette(m)
+				const wx = Number(m?.worldX)
+				const wy = Number(m?.worldY)
+				const wz = Number(m?.worldZ)
+				const x = Number.isFinite(wx) ? wx : 0
+				const y = Number.isFinite(wy) ? wy : 0.8
+				const z = Number.isFinite(wz) ? wz + 0.72 : 0
+				const premium = isPremiumMarker(m)
+
+				const backMat = new THREE.MeshStandardMaterial({
+					color: premium ? new THREE.Color('#241a0e') : new THREE.Color('#052e1f'),
+					roughness: premium ? 0.58 : 0.86,
+					metalness: premium ? 0.18 : 0.02,
+				})
+				const faceMat = new THREE.MeshStandardMaterial({
+					color: premium ? new THREE.Color('#fff7ed') : palette.accent,
+					roughness: premium ? 0.44 : 0.68,
+					metalness: premium ? 0.08 : 0.02,
+				})
+				const innerMat = new THREE.MeshStandardMaterial({ color: palette.accent, roughness: 0.62, metalness: premium ? 0.08 : 0.02 })
+				const goldMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#d6a936'), roughness: 0.38, metalness: 0.36 })
+				const back = new THREE.Mesh(new THREE.BoxGeometry(premium ? 0.72 : 0.62, premium ? 0.5 : 0.44, 0.12), backMat)
+				back.position.set(0, 0, 0)
+				back.castShadow = true
+				g.add(back)
+
+				if (premium) {
+					const halo = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.44, 0.13), goldMat)
+					halo.position.set(0, 0, 0.055)
+					halo.castShadow = true
+					g.add(halo)
+				}
+
+				const face = new THREE.Mesh(new THREE.BoxGeometry(premium ? 0.52 : 0.48, premium ? 0.32 : 0.30, 0.14), faceMat)
+				face.position.set(0, 0.02, 0.08)
+				face.castShadow = true
+				g.add(face)
+
+				const stripe = new THREE.Mesh(new THREE.BoxGeometry(premium ? 0.42 : 0.34, premium ? 0.06 : 0.055, 0.16), innerMat)
+				stripe.position.set(0, premium ? -0.17 : -0.16, 0.13)
+				g.add(stripe)
+
+				if (premium) {
+					const topTrim = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.035, 0.17), goldMat)
+					topTrim.position.set(0, 0.21, 0.14)
+					g.add(topTrim)
+					const leftTrim = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.3, 0.17), goldMat)
+					leftTrim.position.set(-0.285, 0.02, 0.14)
+					g.add(leftTrim)
+					const rightTrim = leftTrim.clone()
+					rightTrim.position.x = 0.285
+					g.add(rightTrim)
+				}
+
+				g.position.set(x, y, z)
+				g.traverse((o) => {
+					if (o.isMesh) {
+						o.userData.parent = g
+						clickables.push(o)
+					}
+				})
+				graveById.set(String(m?.id || ''), g)
+				scene.add(g)
+			}
+
+			function makeInstancedGraves(renderMarkers = markers) {
 				const dummy = new THREE.Object3D()
 				const plotGeo = new THREE.BoxGeometry(1, 1, 1)
 				const soilGeo = new THREE.BoxGeometry(1, 1, 1)
 				const headGeo = new THREE.BoxGeometry(1, 1, 1)
-				const count = markers.length
+				const count = renderMarkers.length
 				const plotInstMat = stoneDarkMat.clone()
 				const soilInstMat = soilMat.clone()
 				const headInstMat = stoneMat.clone()
@@ -633,14 +1026,15 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 				plotMesh.instanceMatrix.setUsage(THREE.StaticDrawUsage)
 				soilMesh.instanceMatrix.setUsage(THREE.StaticDrawUsage)
 				headMesh.instanceMatrix.setUsage(THREE.StaticDrawUsage)
-				plotMesh.userData.instanceMarkers = markers
-				soilMesh.userData.instanceMarkers = markers
-				headMesh.userData.instanceMarkers = markers
+				plotMesh.userData.instanceMarkers = renderMarkers
+				soilMesh.userData.instanceMarkers = renderMarkers
 				plotMesh.receiveShadow = true
 				soilMesh.receiveShadow = true
 				headMesh.castShadow = !isImmersive
 
-				markers.forEach((m, idx) => {
+				headMesh.userData.instanceMarkers = renderMarkers
+
+				renderMarkers.forEach((m, idx) => {
 					const seed = stableSeedFromString(String(m?.id || idx))
 					const { x, z } = markerToXZ(m, seed)
 					const hasGridPosition = m?.worldX != null && m?.worldZ != null && Number.isFinite(Number(m.worldX)) && Number.isFinite(Number(m.worldZ))
@@ -832,8 +1226,12 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 			}
 
 			addSectionGuides()
-			if (markers.length >= 80) makeInstancedGraves()
-			else markers.forEach((m, i) => makeGrave(m, i))
+			addNichesForSections()
+			const nicheMarkers = markers.filter((m) => m?.renderMode === 'nicheSlot')
+			const groundMarkers = markers.filter((m) => m?.renderMode !== 'nicheSlot')
+			nicheMarkers.forEach((m, i) => makeNicheSlot(m, i))
+			if (groundMarkers.length >= 80) makeInstancedGraves(groundMarkers)
+			else groundMarkers.forEach((m, i) => makeGrave(m, i))
 
 			// Muros perimetrales + portón de entrada (estilo low-poly como la referencia)
 			const walls = new THREE.Group()
@@ -981,6 +1379,8 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 			const trees = new THREE.Group()
 			const trunkMat = new THREE.MeshStandardMaterial({ color: soil.clone().offsetHSL(0, 0.08, -0.18), roughness: 0.95, metalness: 0.0 })
 			const leafMat = new THREE.MeshStandardMaterial({ color: grassA.clone().offsetHSL(0, 0.10, -0.04), roughness: 0.92, metalness: 0.0 })
+			const broadLeafMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#4f8f55'), roughness: 0.92, metalness: 0.0 })
+			const shrubLeafMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#2f6f3e'), roughness: 0.94, metalness: 0.0 })
 			const trunkGeo = new THREE.CylinderGeometry(0.10, 0.14, 1.1, 8)
 			const leafGeo = new THREE.ConeGeometry(0.48, 1.75, 10)
 			const positions = [
@@ -1018,11 +1418,25 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 				trunk.position.set(x, 0.55, z)
 				trunk.castShadow = true
 				trees.add(trunk)
-				const leaf = new THREE.Mesh(leafGeo, leafMat)
-				leaf.position.set(x, 1.65 * s, z)
-				leaf.scale.setScalar(s)
-				leaf.castShadow = true
-				trees.add(leaf)
+				if (i % 3 === 0) {
+					const crown = new THREE.Mesh(new THREE.SphereGeometry(0.68, 10, 7), broadLeafMat)
+					crown.position.set(x, 1.45 * s, z)
+					crown.scale.set(1.2 * s, 0.82 * s, 1.05 * s)
+					crown.castShadow = true
+					trees.add(crown)
+				} else {
+					const leaf = new THREE.Mesh(leafGeo, leafMat)
+					leaf.position.set(x, 1.65 * s, z)
+					leaf.scale.setScalar(s)
+					leaf.castShadow = true
+					trees.add(leaf)
+				}
+				if (i % 2 === 0) {
+					const shrub = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 5), shrubLeafMat)
+					shrub.position.set(x + (stable01(i * 41) - 0.5) * 1.2, 0.32, z + (stable01(i * 43) - 0.5) * 1.2)
+					shrub.scale.set(1.35, 0.55, 1.0)
+					trees.add(shrub)
+				}
 			})
 			scene.add(trees)
 
@@ -1094,6 +1508,7 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 				requestRender()
 			}
 			function onWheel(e) {
+				e.preventDefault()
 				targetRadius = clamp(targetRadius + e.deltaY * 0.03, 10, isImmersive ? 68 : 74)
 				requestRender()
 			}
@@ -1119,6 +1534,18 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 					}
 					requestRender()
 					return fogEnabled
+				},
+				nudge: (action) => {
+					const stepTheta = 0.28
+					const stepPhi = 0.16
+					const stepZoom = 5.5
+					if (action === 'left') targetTheta += stepTheta
+					if (action === 'right') targetTheta -= stepTheta
+					if (action === 'up') targetPhi = clamp(targetPhi - stepPhi, 0.12, 1.1)
+					if (action === 'down') targetPhi = clamp(targetPhi + stepPhi, 0.12, 1.1)
+					if (action === 'zoomIn') targetRadius = clamp(targetRadius - stepZoom, 10, isImmersive ? 68 : 74)
+					if (action === 'zoomOut') targetRadius = clamp(targetRadius + stepZoom, 10, isImmersive ? 68 : 74)
+					requestRender()
 				},
 				requestRender,
 			}
@@ -1157,7 +1584,7 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 			canvas.addEventListener('mousedown', onDown)
 			window.addEventListener('mouseup', onUp)
 			window.addEventListener('mousemove', onMove)
-			canvas.addEventListener('wheel', onWheel, { passive: true })
+			canvas.addEventListener('wheel', onWheel, { passive: false })
 			canvas.addEventListener('click', onClick)
 
 			function loop() {
@@ -1294,11 +1721,36 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 		}
 	}
 
+	function onNudgeCamera(action) {
+		try {
+			controlsRef.current?.nudge?.(action)
+		} catch {
+			// ignore
+		}
+	}
+
+	function ControlButton({ action, label, className = '' }) {
+		return (
+			<button
+				type="button"
+				onClick={() => onNudgeCamera(action)}
+				aria-label={label}
+				title={label}
+				className={
+					'inline-flex h-10 w-10 touch-manipulation items-center justify-center rounded-md border border-white/15 bg-black/35 text-sm font-bold text-[color:var(--text-h)] shadow-sm backdrop-blur transition hover:bg-black/50 active:scale-95 ' +
+					className
+				}
+			>
+				{label}
+			</button>
+		)
+	}
+
 	if (isImmersive) {
 		return (
 			<div className="theme-dark overflow-hidden rounded-md border border-[color:var(--border)]" style={{ background: 'var(--nav-gradient)' }}>
 				<div ref={rootRef} className="relative overflow-hidden bg-black/10">
-					<canvas ref={canvasRef} className="block h-[72svh] w-full md:h-[78svh]" />
+					<canvas ref={canvasRef} className="block h-[72svh] w-full cursor-grab touch-none md:h-[78svh]" />
 
 					{/* Overlay UI (estilo mapaInteractivo) */}
 					<div className="pointer-events-none absolute inset-0">
@@ -1329,6 +1781,32 @@ export function Cemetery3DView({ markers = [], sections = [], selected = null, o
 										{item.label}
 									</span>
 								))}
+							</div>
+						</div>
+
+						<div className="pointer-events-auto absolute bottom-16 left-4 rounded-md border border-[color:var(--border)] bg-black/35 p-2 backdrop-blur md:bottom-20">
+							<div className="grid grid-cols-3 gap-1">
+								<div />
+								<ControlButton action="up" label="↑" />
+								<div />
+								<ControlButton action="left" label="←" />
+								<button
+									type="button"
+									onClick={onResetCam}
+									aria-label="Centrar cámara"
+									title="Centrar cámara"
+									className="inline-flex h-10 w-10 touch-manipulation items-center justify-center rounded-md border border-white/15 bg-black/45 text-[11px] font-bold tracking-[0.12em] text-[color:var(--text-h)] shadow-sm backdrop-blur transition hover:bg-black/55 active:scale-95"
+								>
+									• 
+								</button>
+								<ControlButton action="right" label="→" />
+								<div />
+								<ControlButton action="down" label="↓" />
+								<div />
+							</div>
+							<div className="mt-2 grid grid-cols-2 gap-1">
+								<ControlButton action="zoomIn" label="+" className="w-full" />
+								<ControlButton action="zoomOut" label="−" className="w-full" />
 							</div>
 						</div>
 

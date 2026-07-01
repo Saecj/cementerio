@@ -64,7 +64,7 @@ function buildGravesPublicRouter() {
 		if (sectors.length === 0) return res.status(200).json({ ok: true, sectors: [], sectorId: null, graves: [] });
 
 		const requestedInList = requestedSectorId != null && sectors.some((s) => Number(s.id) === Number(requestedSectorId));
-		const sectorId = requestedInList ? requestedSectorId : sectors[0].id;
+		const sectorId = requestedInList ? requestedSectorId : null;
 		const gravesResult = await db.query(
 			`
 				SELECT
@@ -105,11 +105,12 @@ function buildGravesPublicRouter() {
 					ORDER BY b.id DESC
 					LIMIT 1
 				) occ ON true
-				WHERE l.sector_id = $1
+				WHERE ($1::bigint IS NULL OR l.sector_id = $1)
+					AND ($2::bigint IS NULL OR s.branch_id = $2)
 					AND g.is_enabled IS DISTINCT FROM false
 				ORDER BY l.row_number ASC NULLS LAST, l.col_number ASC NULLS LAST, g.id ASC
 			`,
-			[sectorId],
+			[sectorId, branchId],
 		);
 
 		return res.status(200).json({ ok: true, sectors, sectorId, graves: gravesResult.rows });

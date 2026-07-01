@@ -4,6 +4,95 @@ const { requireAuth } = require('../../middleware/auth');
 const { normalizeQuery } = require('../../shared/normalize');
 const { writePaymentReceiptPdf } = require('../../shared/payment-receipt-pdf');
 
+const INSTALLMENT_MONTHS = new Set([1, 3, 6, 9, 12]);
+
+function normalizeInstallmentMonths(value) {
+	const n = Number(value || 1);
+	if (!Number.isFinite(n)) return 1;
+	const rounded = Math.trunc(n);
+	return INSTALLMENT_MONTHS.has(rounded) ? rounded : 1;
+}
+
+function calculateInstallmentPlan(baseCents, paymentTypeName, installmentMonths) {
+	const base = Math.max(Number(baseCents || 0), 0);
+	const months = normalizeInstallmentMonths(installmentMonths);
+	const typeName = String(paymentTypeName || '').trim();
+	let total = base;
+
+	if (typeName === 'card_credit') {
+		total = Math.round(base * 1.045);
+	} else if ((typeName === 'card_debit' || typeName === 'cash') && months > 1) {
+		total = base + months * 500;
+	}
+
+	return {
+		baseAmountCents: base,
+		financeChargeCents: Math.max(total - base, 0),
+		installmentMonths: months,
+		installmentAmountCents: Math.ceil(total / months),
+		totalCents: total,
+	};
+}
+
+function detectCardBrand(raw) {
+	const digits = String(raw || '').replace(/\D/g, '');
+	if (!digits) return '';
+	if (digits.startsWith('4')) return 'Visa';
+	const first2 = Number(digits.slice(0, 2));
+	const first4 = Number(digits.slice(0, 4));
+	if (first2 >= 51 && first2 <= 55) return 'Mastercard';
+	if (first4 >= 2221 && first4 <= 2720) return 'Mastercard';
+	return '';
+}
+
+function isValidCardLength(raw, brand) {
+	const len = String(raw || '').replace(/\D/g, '').length;
+	return len === 16;
+}
+
+function passesLuhn(raw) {
+	const digits = String(raw || '').replace(/\D/g, '');
+	if (!digits) return false;
+	let sum = 0;
+	let doubleNext = false;
+	for (let i = digits.length - 1; i >= 0; i--) {
+		let n = Number(digits[i]);
+		if (!Number.isInteger(n)) return false;
+		if (doubleNext) {
+			n *= 2;
+			if (n > 9) n -= 9;
+		}
+		sum += n;
+		doubleNext = !doubleNext;
+	}
+	return sum % 10 === 0;
+}
+
+function isValidCardExpiry(raw, now = new Date()) {
+	const digits = String(raw || '').replace(/\D/g, '');
+	if (digits.length !== 4 && digits.length !== 6) return false;
+	const month = Number(digits.slice(0, 2));
+	const yearDigits = digits.slice(2);
+	const year = yearDigits.length === 2 ? 2000 + Number(yearDigits) : Number(yearDigits);
+	if (!Number.isInteger(month) || month < 1 || month > 12) return false;
+	if (!Number.isInteger(year)) return false;
+	const currentMonth = now.getMonth() + 1;
+	const currentYear = now.getFullYear();
+	return year > currentYear || (year === currentYear && month >= currentMonth);
+}
+
+function validateCardPayload(paymentTypeName, body) {
+	const typeName = String(paymentTypeName || '').trim();
+	if (!typeName.startsWith('card')) return null;
+	const cardNumber = String(body?.cardNumber || '').replace(/\D/g, '');
+	const brand = detectCardBrand(cardNumber);
+	if (!isValidCardLength(cardNumber, brand)) return 'CARD_NUMBER_LENGTH_INVALID';
+	if (!passesLuhn(cardNumber)) return 'CARD_NUMBER_LUHN_INVALID';
+	if (!isValidCardExpiry(body?.cardExpiry)) return 'CARD_EXPIRY_INVALID';
+	if (!/^\d{3}$/.test(String(body?.cardCvv || ''))) return 'CARD_CVV_INVALID';
+	return null;
+}
+
 function buildPaymentsClientRouter() {
 	const router = express.Router();
 
@@ -31,6 +120,10 @@ function buildPaymentsClientRouter() {
 					g.code AS grave_code,
 					p.payment_type_id,
 					pt.name AS payment_type_name,
+					p.base_amount_cents,
+					p.finance_charge_cents,
+					p.installment_months,
+					p.installment_amount_cents,
 					p.amount_cents,
 					p.currency,
 					p.status,
@@ -110,6 +203,7 @@ function buildPaymentsClientRouter() {
 		const paymentTypeId = req.body?.paymentTypeId;
 		const amountCents = Number(req.body?.amountCents);
 		const currency = normalizeQuery(req.body?.currency) || 'PEN';
+		const installmentMonths = normalizeInstallmentMonths(req.body?.installmentMonths);
 		if (!reservationCode) return res.status(400).json({ ok: false, error: 'RESERVATION_CODE_REQUIRED' });
 		if (!paymentTypeId) return res.status(400).json({ ok: false, error: 'PAYMENT_TYPE_REQUIRED' });
 		if (!Number.isFinite(amountCents) || amountCents <= 0) return res.status(400).json({ ok: false, error: 'AMOUNT_INVALID' });
@@ -139,6 +233,20 @@ function buildPaymentsClientRouter() {
 					throw err;
 				}
 
+				const typeResult = await client.query('SELECT id, name FROM payment_types WHERE id = $1 LIMIT 1', [paymentTypeId]);
+				const paymentType = typeResult.rows[0];
+				if (!paymentType) {
+					const err = new Error('PAYMENT_TYPE_NOT_FOUND');
+					err.code = 'PAYMENT_TYPE_NOT_FOUND';
+					throw err;
+				}
+				const cardError = validateCardPayload(paymentType.name, req.body);
+				if (cardError) {
+					const err = new Error(cardError);
+					err.code = cardError;
+					throw err;
+				}
+
 				const sumsResult = await client.query(
 					`
 						SELECT
@@ -158,17 +266,39 @@ function buildPaymentsClientRouter() {
 					err.code = 'NOTHING_DUE';
 					throw err;
 				}
-				if (amountCents !== dueCents) {
+				const plan = calculateInstallmentPlan(dueCents, paymentType.name, installmentMonths);
+				if (amountCents !== plan.totalCents) {
 					const err = new Error('AMOUNT_MUST_MATCH_DUE');
 					err.code = 'AMOUNT_MUST_MATCH_DUE';
 					throw err;
 				}
 
 				const inserted = await client.query(
-					`INSERT INTO payments (client_id, reservation_id, payment_type_id, amount_cents, currency, status)
-					 VALUES ($1, $2, $3, $4, $5, 'pending')
-					 RETURNING id, receipt_code, client_id, reservation_id, payment_type_id, amount_cents, currency, status, paid_at, created_at`,
-					[clientId, reservation.id, paymentTypeId, amountCents, currency],
+					`INSERT INTO payments (
+						client_id,
+						reservation_id,
+						payment_type_id,
+						amount_cents,
+						base_amount_cents,
+						finance_charge_cents,
+						installment_months,
+						installment_amount_cents,
+						currency,
+						status
+					)
+					 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
+					 RETURNING id, receipt_code, client_id, reservation_id, payment_type_id, amount_cents, base_amount_cents, finance_charge_cents, installment_months, installment_amount_cents, currency, status, paid_at, created_at`,
+					[
+						clientId,
+						reservation.id,
+						paymentTypeId,
+						plan.totalCents,
+						plan.baseAmountCents,
+						plan.financeChargeCents,
+						plan.installmentMonths,
+						plan.installmentAmountCents,
+						currency,
+					],
 				);
 				return inserted.rows[0];
 			});
@@ -179,7 +309,16 @@ function buildPaymentsClientRouter() {
 			if (code === 'RESERVATION_NOT_FOUND') return res.status(404).json({ ok: false, error: code });
 			if (code === 'RESERVATION_NOT_CONFIRMED') return res.status(409).json({ ok: false, error: code });
 			if (code === 'NOTHING_DUE') return res.status(409).json({ ok: false, error: code });
+			if (code === 'PAYMENT_TYPE_NOT_FOUND') return res.status(400).json({ ok: false, error: code });
 			if (code === 'AMOUNT_MUST_MATCH_DUE') return res.status(400).json({ ok: false, error: code });
+			if (
+				code === 'CARD_NUMBER_LENGTH_INVALID' ||
+				code === 'CARD_NUMBER_LUHN_INVALID' ||
+				code === 'CARD_EXPIRY_INVALID' ||
+				code === 'CARD_CVV_INVALID'
+			) {
+				return res.status(400).json({ ok: false, error: code });
+			}
 			console.error('PAYMENT_CREATE_FAILED', error);
 			return res.status(500).json({ ok: false, error: 'PAYMENT_CREATE_FAILED' });
 		}

@@ -2,6 +2,36 @@ import { useEffect, useMemo, useState } from 'react'
 import { Card } from '../ui'
 
 export function AdminReportsModule({ reservations, payments, onRefresh }) {
+	function formatMoney(cents, currency = 'PEN') {
+		const amount = Number(cents || 0) / 100
+		try {
+			return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount)
+		} catch {
+			return `S/ ${amount.toFixed(2)}`
+		}
+	}
+
+	function normalizeWhatsAppPhone(phone) {
+		const digits = String(phone || '').replace(/\D/g, '')
+		if (!digits) return ''
+		if (digits.startsWith('51')) return digits
+		if (digits.length === 9) return `51${digits}`
+		return digits
+	}
+
+	function whatsappUrl(row) {
+		const phone = normalizeWhatsAppPhone(row?.client_phone)
+		if (!phone) return ''
+		const pending = Math.max(Number(row?.price_cents || 0) - Number(row?.paid_cents || 0), 0)
+		const message = [
+			`Hola ${row?.client_full_name || ''}`.trim(),
+			`te escribimos sobre tu reserva ${row?.reservation_code || ''} de la tumba ${row?.grave_code || ''}.`,
+			`Figura como pendiente de pago por ${formatMoney(pending || row?.price_cents || 0)}.`,
+			'Por favor, indícanos si deseas regularizarla.',
+		].join(' ')
+		return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
+	}
+
 	function safeStorageGet(key) {
 		try {
 			return window.localStorage.getItem(key)
@@ -40,6 +70,10 @@ export function AdminReportsModule({ reservations, payments, onRefresh }) {
 			default:
 				return { label: 'Pendiente', className: 'bg-[color:var(--surface-2)] text-[color:var(--az2)] border-[color:var(--az4)]', dot: 'bg-[color:var(--az4)]' }
 		}
+	}
+
+	function paymentSummaryUi(status) {
+		return paymentStatusUi(status === 'paid' ? 'paid' : 'pending')
 	}
 
 	const [refreshing, setRefreshing] = useState(false)
@@ -160,28 +194,73 @@ export function AdminReportsModule({ reservations, payments, onRefresh }) {
 						{reservations.length === 0 ? (
 							<div className="p-3 text-sm text-[color:var(--text)]">Sin reservas.</div>
 						) : (
-							reservations.slice(0, 200).map((r) => (
-								<div key={r.id} className="border-b border-[color:var(--border)] p-3 last:border-b-0">
-									<div className="text-sm font-medium text-[color:var(--text-h)]">
-										<span className={Number(r.id) > Number(rSeenMaxId || 0) ? 'text-[color:var(--az2)]' : ''}>
-											#{r.id} · {r.grave_code}
-										</span>
-										{Number(r.id) > Number(rSeenMaxId || 0) && (
-											<span className="ml-2 rounded-full bg-[color:var(--surface-2)] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--az2)]">
-												NUEVO
-											</span>
-										)}
-										<span className={
-											'ml-2 inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] ' +
-											reservationStatusUi(r.status).className
-										}
-										>
-											{reservationStatusUi(r.status).label}
-										</span>
+							reservations.slice(0, 200).map((r) => {
+								const paymentUi = paymentSummaryUi(r.payment_status)
+								const pendingCents = Math.max(Number(r.price_cents || 0) - Number(r.paid_cents || 0), 0)
+								const wa = r.payment_status !== 'paid' ? whatsappUrl(r) : ''
+								return (
+									<div key={r.id} className="border-b border-[color:var(--border)] p-3 last:border-b-0">
+										<div className="flex flex-wrap items-start justify-between gap-3">
+											<div>
+												<div className="text-sm font-medium text-[color:var(--text-h)]">
+													<span className={Number(r.id) > Number(rSeenMaxId || 0) ? 'text-[color:var(--az2)]' : ''}>
+														#{r.id} · {r.reservation_code || r.grave_code}
+													</span>
+													{Number(r.id) > Number(rSeenMaxId || 0) && (
+														<span className="ml-2 rounded-full bg-[color:var(--surface-2)] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--az2)]">
+															NUEVO
+														</span>
+													)}
+												</div>
+												<div className="mt-1 text-xs text-[color:var(--text)]">
+													{r.client_full_name || 'Cliente'} · {r.client_email}
+												</div>
+												<div className="mt-1 text-xs text-[color:var(--text)]">
+													Celular: <span className="font-semibold text-[color:var(--text-h)]">{r.client_phone || 'Sin registrar'}</span>
+												</div>
+											</div>
+											<div className="flex flex-wrap justify-end gap-2">
+												<span className={
+													'inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] ' +
+													reservationStatusUi(r.status).className
+												}
+												>
+													{reservationStatusUi(r.status).label}
+												</span>
+												<span className={'inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] ' + paymentUi.className}>
+													Pago: {paymentUi.label}
+												</span>
+											</div>
+										</div>
+										<div className="mt-3 grid gap-2 text-xs md:grid-cols-3">
+											<div className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-2)] p-2">
+												<div className="text-[10px] uppercase tracking-[0.18em] text-[color:var(--muted)]">Tumba</div>
+												<div className="mt-1 font-semibold text-[color:var(--text-h)]">{r.grave_code || '—'}</div>
+											</div>
+											<div className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-2)] p-2">
+												<div className="text-[10px] uppercase tracking-[0.18em] text-[color:var(--muted)]">Pendiente</div>
+												<div className="mt-1 font-semibold text-[color:var(--text-h)]">{formatMoney(pendingCents)}</div>
+											</div>
+											<div className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-2)] p-2">
+												<div className="text-[10px] uppercase tracking-[0.18em] text-[color:var(--muted)]">Días</div>
+												<div className="mt-1 font-semibold text-[color:var(--text-h)]">{Number(r.days_registered || 0)} registrados</div>
+											</div>
+										</div>
+										{wa ? (
+											<div className="mt-3 flex justify-end">
+												<a
+													href={wa}
+													target="_blank"
+													rel="noreferrer"
+													className="inline-flex items-center rounded-md bg-[color:var(--accent)] px-3 py-2 text-xs font-semibold !text-[color:var(--on-accent)] no-underline hover:opacity-90"
+												>
+													Enviar WhatsApp
+												</a>
+											</div>
+										) : null}
 									</div>
-									<div className="text-xs text-[color:var(--text)]">{r.client_email}</div>
-								</div>
-							))
+								)
+							})
 						)}
 					</div>
 				</div>
@@ -232,24 +311,51 @@ export function AdminReportsModule({ reservations, payments, onRefresh }) {
 						) : (
 							payments.slice(0, 200).map((p) => (
 								<div key={p.id} className="border-b border-[color:var(--border)] p-3 last:border-b-0">
-									<div className="text-sm font-medium text-[color:var(--text-h)]">
-										<span className={Number(p.id) > Number(pSeenMaxId || 0) ? 'text-[color:var(--az2)]' : ''}>
-											#{p.id} · {(p.amount_cents / 100).toFixed(2)} {p.currency}
-										</span>
-										{Number(p.id) > Number(pSeenMaxId || 0) && (
-											<span className="ml-2 rounded-full bg-[color:var(--surface-2)] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--az2)]">
-												NUEVO
-											</span>
-										)}
+									<div className="flex flex-wrap items-start justify-between gap-3">
+										<div>
+											<div className="text-sm font-medium text-[color:var(--text-h)]">
+												<span className={Number(p.id) > Number(pSeenMaxId || 0) ? 'text-[color:var(--az2)]' : ''}>
+													#{p.id} · {formatMoney(p.amount_cents, p.currency)}
+												</span>
+												{Number(p.id) > Number(pSeenMaxId || 0) && (
+													<span className="ml-2 rounded-full bg-[color:var(--surface-2)] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--az2)]">
+														NUEVO
+													</span>
+												)}
+											</div>
+											<div className="mt-1 text-xs text-[color:var(--text)]">
+												{p.client_full_name || 'Cliente'} · {p.client_email}
+											</div>
+											<div className="mt-1 text-xs text-[color:var(--text)]">
+												Celular: <span className="font-semibold text-[color:var(--text-h)]">{p.client_phone || 'Sin registrar'}</span>
+											</div>
+										</div>
 										<span className={
-											'ml-2 inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] ' +
+											'inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] ' +
 											paymentStatusUi(p.status).className
 										}
 										>
 											{paymentStatusUi(p.status).label}
 										</span>
 									</div>
-									<div className="text-xs text-[color:var(--text)]">{p.client_email} · {p.payment_type_name}</div>
+									<div className="mt-3 grid gap-2 text-xs md:grid-cols-3">
+										<div className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-2)] p-2">
+											<div className="text-[10px] uppercase tracking-[0.18em] text-[color:var(--muted)]">Reserva</div>
+											<div className="mt-1 font-semibold text-[color:var(--text-h)]">{p.reservation_code || '—'}</div>
+										</div>
+										<div className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-2)] p-2">
+											<div className="text-[10px] uppercase tracking-[0.18em] text-[color:var(--muted)]">Tipo</div>
+											<div className="mt-1 font-semibold text-[color:var(--text-h)]">{p.payment_type_name}</div>
+										</div>
+										<div className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-2)] p-2">
+											<div className="text-[10px] uppercase tracking-[0.18em] text-[color:var(--muted)]">Cuotas</div>
+											<div className="mt-1 font-semibold text-[color:var(--text-h)]">
+												{Number(p.installment_months || 1) > 1
+													? `${p.installment_months} x ${formatMoney(p.installment_amount_cents || 0, p.currency)}`
+													: 'Contado'}
+											</div>
+										</div>
+									</div>
 								</div>
 							))
 						)}

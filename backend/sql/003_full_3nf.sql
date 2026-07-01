@@ -117,11 +117,16 @@ CREATE TABLE IF NOT EXISTS payments (
 	reservation_id BIGINT REFERENCES reservations(id),
 	payment_type_id BIGINT NOT NULL REFERENCES payment_types(id),
 	amount_cents BIGINT NOT NULL,
+	base_amount_cents BIGINT,
+	finance_charge_cents BIGINT NOT NULL DEFAULT 0,
+	installment_months INT NOT NULL DEFAULT 1,
+	installment_amount_cents BIGINT,
 	currency TEXT NOT NULL DEFAULT 'PEN',
 	status TEXT NOT NULL DEFAULT 'pending',
 	paid_at TIMESTAMPTZ,
 	created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 	CONSTRAINT payments_amount_check CHECK (amount_cents > 0),
+	CONSTRAINT payments_installments_check CHECK (installment_months IN (1, 3, 6, 9, 12)),
 	CONSTRAINT payments_status_check CHECK (status IN ('pending', 'paid', 'void'))
 );
 
@@ -150,7 +155,7 @@ CREATE INDEX IF NOT EXISTS reports_type_idx
 	ON reports (report_type, created_at DESC);
 
 -- Seeds mínimos
-INSERT INTO grave_types (name) VALUES ('standard')
+INSERT INTO grave_types (name) VALUES ('standard'), ('premium')
 	ON CONFLICT (name) DO NOTHING;
-INSERT INTO payment_types (name) VALUES ('cash')
+INSERT INTO payment_types (name) VALUES ('cash'), ('card_credit'), ('card_debit')
 	ON CONFLICT (name) DO NOTHING;
