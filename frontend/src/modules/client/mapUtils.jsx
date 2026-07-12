@@ -54,14 +54,144 @@ export function normalizeMapPayload(data) {
 			__section_count: sectionCounts.get(key) || 1,
 		}
 	})
-	const markers = orderedItems.map((r) => {
+	const markers = buildNicheMarkers(orderedItems)
+	return { items: orderedItems, markers, sectors, source }
+}
+
+function buildNicheMarkers(items) {
+	const list = Array.isArray(items) ? items : []
+	const sectionLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
+	const sectionSlots = [
+		{ centerX: -18.5, centerZ: 8.8 },
+		{ centerX: 18.5, centerZ: 8.8 },
+		{ centerX: -18.5, centerZ: -11.8 },
+		{ centerX: 18.5, centerZ: -11.8 },
+		{ centerX: -26.2, centerZ: -1.5 },
+		{ centerX: 26.2, centerZ: -1.5 },
+		{ centerX: -7.6, centerZ: -15.2 },
+		{ centerX: 7.6, centerZ: -15.2 },
+	]
+	const bySection = new Map()
+	list.forEach((r, idx) => {
+		const inferred = inferSectionFromRecord(r)
+		const rawName = String(r?.sector_name || inferred.name || '').trim()
+		const key = String(r?.sector_id ?? rawName ?? inferred.id ?? 'general')
+		if (!bySection.has(key)) {
+			bySection.set(key, {
+				key,
+				name: rawName || sectionLetters[bySection.size] || `Sección ${bySection.size + 1}`,
+				items: [],
+			})
+		}
+		bySection.get(key).items.push({ r, idx })
+	})
+
+	const placed = []
+	Array.from(bySection.values())
+		.sort((a, b) => String(a.name).localeCompare(String(b.name), 'es', { numeric: true, sensitivity: 'base' }))
+		.forEach((section, baseIndex) => {
+			const sorted = [...section.items].sort((a, b) => compareGraveRecords(a.r, b.r) || a.idx - b.idx)
+			const slot = sectionSlots[baseIndex % sectionSlots.length]
+			const overflowRing = Math.floor(baseIndex / sectionSlots.length)
+			const baseLetter = String(section.name || sectionLetters[baseIndex] || 'S')
+				.replace(/^Secci[oó]n\s+/i, '')
+				.trim()
+				.slice(0, 2)
+				.toUpperCase()
+			const chunkCount = Math.max(1, Math.ceil(sorted.length / 10))
+			const sectionCenterX = slot.centerX + overflowRing * (slot.centerX < 0 ? 1.4 : -1.4)
+			const sectionCenterZ = slot.centerZ + overflowRing * 1.15
+			const nicheCols = Math.min(3, chunkCount)
+			const nicheRows = Math.ceil(chunkCount / nicheCols)
+			const sectionWidth = Math.max(12.8, nicheCols * 4.4 + 2.8)
+			const sectionDepth = Math.max(11.2, nicheRows * 4.4 + 7.2)
+
+			sorted.forEach((entry, localIndex) => {
+				const chunk = Math.floor(localIndex / 10)
+				const nicheCol = chunk % nicheCols
+				const nicheRow = Math.floor(chunk / nicheCols)
+				const nicheCenterX = sectionCenterX + (nicheCol - (nicheCols - 1) / 2) * 4.4
+				const nicheCenterZ = sectionCenterZ - sectionDepth / 2 + 1.65 + nicheRow * 4.4
+				placed.push({
+					...entry,
+					localIndex: localIndex % 10,
+					sectionId: section.key,
+					sectionName: `Sección ${baseLetter}`,
+					sectionLetter: baseLetter,
+					originalSectorName: section.name,
+					sectionCenterX,
+					sectionCenterZ,
+					sectionWidth,
+					sectionDepth,
+					nicheIndex: chunk,
+					nicheCenterX,
+					nicheCenterZ,
+				})
+			})
+		})
+
+	return placed.map((entry) => {
+		const r = entry.r
 		const id = recordKey(r)
 		const seed = makeStableSeed(id)
-		const layout = getLayoutPosition(r, sectors, seed)
-		const hue = Math.floor(stable01(seed ^ 0x7f4a7c15) * 300)
-		return { id, record: r, hue, ...layout }
+		const col = Math.floor(entry.localIndex / 5)
+		const row = entry.localIndex % 5
+		const worldX = entry.nicheCenterX + (col - 0.5) * 0.78
+		const worldZ = entry.nicheCenterZ + 0.72
+		const worldY = 0.58 + (4 - row) * 0.34
+		const state = markerVisualState(r)
+		const isPremium = String(r?.grave_type_name || '').trim().toLowerCase() === 'premium'
+		return {
+			id,
+			record: {
+				...r,
+				grave_code: r?.grave_code || r?.code || '',
+				sector_name: entry.sectionLetter || r?.sector_name || '',
+				section_name: entry.sectionName,
+				original_sector_name: entry.originalSectorName || r?.sector_name || '',
+				state,
+				grave_status: r?.grave_status || state,
+				reservation_status: r?.reservation_status || r?.status || '',
+				availability_status: r?.availability_status || '',
+				is_premium: isPremium,
+			},
+			sectionId: entry.sectionId,
+			sectionName: entry.sectionName,
+			sectionLetter: entry.sectionLetter,
+			sectionCenterX: entry.sectionCenterX,
+			sectionCenterZ: entry.sectionCenterZ,
+			sectionWidth: entry.sectionWidth,
+			sectionDepth: entry.sectionDepth,
+			sectionCapacity: 10,
+			nicheCount: 1,
+			isPremium,
+			renderMode: 'nicheSlot',
+			nicheCenterX: entry.nicheCenterX,
+			nicheCenterZ: entry.nicheCenterZ,
+			nicheIndex: entry.nicheIndex,
+			nicheSlotIndex: entry.localIndex,
+			worldY,
+			state,
+			status: state,
+			worldX,
+			worldZ,
+			x: 50 + (worldX / 28) * 50,
+			y: 50 + (worldZ / 18) * 50,
+			hue: Math.floor(stable01(seed ^ 0x7f4a7c15) * 140),
+		}
 	})
-	return { items: orderedItems, markers, sectors, source }
+}
+
+function markerVisualState(r) {
+	const graveStatus = String(r?.grave_status || '').trim().toLowerCase()
+	const reservationStatus = String(r?.reservation_status || r?.status || '').trim().toLowerCase()
+	const paymentStatus = String(r?.payment_status || '').trim().toLowerCase()
+	if (r?.has_burial || graveStatus === 'occupied') return 'occupied'
+	if (graveStatus === 'maintenance') return 'maintenance'
+	if (reservationStatus === 'pending' || paymentStatus === 'pending') return 'pending'
+	if (reservationStatus === 'confirmed' || graveStatus === 'reserved') return 'reserved'
+	if (graveStatus === 'available') return 'available'
+	return 'reserved'
 }
 
 export function buildSections(items) {
