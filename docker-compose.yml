@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  postgres_db:
+    image: postgres:15-alpine
+    container_name: cementerio_postgres02
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=Cementerio@123
+      - POSTGRES_DB=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cementerio_backend02
+    ports:
+      - "3001:3001" 
+    environment:
+      - PGHOST=postgres_db 
+      - PGPORT=5432
+      - PGUSER=postgres
+      - PGPASSWORD=Cementerio@123
+      - PGDATABASE=postgres
+      - PORT=3001
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      - postgres_db
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cementerio_frontend02
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    extra_hosts:
+      - "localhost:host-gateway"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
