@@ -249,6 +249,49 @@ Capacitación en:
 - Utilizar un navegador actualizado.
 - Reportar errores o inconvenientes al administrador del sistema.
 
+## 🐳 Ejecución con Docker
+
+### Requisitos
+
+* Docker
+* Docker Compose
+
+### Pasos
+
+1. Levantar todos los servicios:
+
+```bash
+docker-compose up --build
+```
+
+2. Detener servicios:
+
+```bash
+docker-compose down
+```
+
+### Servicios Docker
+
+| Servicio | Puerto | Descripción |
+|---|---|---|
+| postgres_db | 5432 | Base de datos PostgreSQL 15 |
+| backend | 3001 | API del sistema |
+| frontend | 5173 | Interfaz web (Vite) |
+
+### Variables de entorno (Docker)
+
+El backend se conecta automáticamente a PostgreSQL usando las variables definidas en `docker-compose.yml`:
+
+* `PGHOST=postgres_db`
+* `PGPORT=5432`
+* `PGUSER=postgres`
+* `PGPASSWORD=Cementerio@123`
+* `PGDATABASE=postgres`
+
+> **Nota:** Estas credenciales son solo para desarrollo local. Nunca las subas a un repositorio público.
+
+---
+
 ## 🏗️ Arquitectura
 
 El sistema sigue el patrón:
